@@ -275,15 +275,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })),
         budget: {
           monthly_budget_cents: budget.monthlyBudgetCents,
-          future_changes: (budget.futureChanges || []).map((change: any) => ({
-            effective_date: change.effectiveDate,
-            new_monthly_budget_cents: change.newMonthlyBudgetCents,
-          })),
-          lump_sum_payments: (budget.lumpSumPayments || []).map((payment: any) => ({
-            payment_date: payment.paymentDate,
-            amount_cents: payment.amountCents,
-            target_lender_name: payment.targetLenderName,
-          })),
+          // Python expects List[Tuple[date, int]] - arrays of 2-element arrays
+          future_changes: (budget.futureChanges || []).map((change: any) => [
+            change.effectiveDate,
+            change.newMonthlyBudgetCents
+          ]),
+          // Python expects List[Tuple[date, int]] - arrays of 2-element arrays
+          // Note: targetLenderName is ignored for now (not supported by solver)
+          lump_sum_payments: (budget.lumpSumPayments || []).map((payment: any) => [
+            payment.paymentDate,
+            payment.amountCents
+          ]),
         },
         preferences: {
           strategy: preferences.strategy,
