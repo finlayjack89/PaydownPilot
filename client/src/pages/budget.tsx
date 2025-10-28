@@ -165,8 +165,8 @@ export default function Budget() {
       return;
     }
 
-    // Validate target account exists if specified
-    if (newLumpTarget && accounts) {
+    // Validate target account exists if specified (skip validation for __ANY__)
+    if (newLumpTarget && newLumpTarget !== "__ANY__" && accounts) {
       const validTarget = accounts.some((acc: any) => acc.lenderName === newLumpTarget);
       if (!validTarget) {
         toast({
@@ -183,7 +183,7 @@ export default function Budget() {
       { 
         paymentDate: newLumpDate, 
         amountCents,
-        targetLenderName: newLumpTarget || null
+        targetLenderName: (newLumpTarget === "__ANY__" || !newLumpTarget) ? null : newLumpTarget
       }
     ].sort((a, b) => a.paymentDate.localeCompare(b.paymentDate)));
     setNewLumpDate("");
@@ -423,7 +423,7 @@ export default function Budget() {
                         <SelectValue placeholder="Any account" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Any account (optimizer decides)</SelectItem>
+                        <SelectItem value="__ANY__">Any account (optimizer decides)</SelectItem>
                         {accounts?.map((acc: any) => (
                           <SelectItem key={acc.id} value={acc.lenderName}>
                             {acc.lenderName}
