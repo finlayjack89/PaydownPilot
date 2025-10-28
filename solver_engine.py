@@ -446,12 +446,32 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
     all_interest_variables: List[cp_model.IntVar] = list(interest_charged.values())
     total_interest_cost = sum(all_interest_variables)
 
-    if strategy == OptimizationStrategy.MINIMIZE_TOTAL_INTEREST or \
-       strategy == OptimizationStrategy.TARGET_MAX_BUDGET:
+    if strategy == OptimizationStrategy.MINIMIZE_TOTAL_INTEREST:
+        # Goal: minimize total interest paid
+        # With LINEAR_PER_ACCOUNT, we also add a secondary objective to maximize budget usage
+        # This prevents the solver from getting stuck at minimum payments
+        if portfolio.preferences.payment_shape == PaymentShape.LINEAR_PER_ACCOUNT:
+            all_payment_variables: List[cp_model.IntVar] = list(payments.values())
+            total_payments = sum(all_payment_variables)
+            # Weight interest very high (100x) to prioritize it, but encourage budget usage
+            model.Minimize(total_interest_cost * 100 - total_payments)
+            print(f"Objective set to: {strategy.value} (with LINEAR shape: minimizing interest + maximizing budget usage)")
+        else:
+            model.Minimize(total_interest_cost)
+            print(f"Objective set to: {strategy.value}")
+    
+    elif strategy == OptimizationStrategy.TARGET_MAX_BUDGET:
+        # Goal: Pay off debt as fast as possible by maximizing payments
+        # We minimize interest, but with a secondary objective to maximize total payments
+        # This encourages using the full budget available
+        all_payment_variables: List[cp_model.IntVar] = list(payments.values())
+        total_payments = sum(all_payment_variables)
         
-        # For these strategies, the goal is simple: minimize total interest.
-        model.Minimize(total_interest_cost)
-        print(f"Objective set to: {strategy.value}")
+        # Primary: minimize interest, Secondary: maximize payments (minimize negative payments)
+        # We weight interest much higher than payments to prioritize interest minimization
+        # but still encourage budget utilization
+        model.Minimize(total_interest_cost * 1000 - total_payments)
+        print(f"Objective set to: {strategy.value} (minimize interest, maximize budget usage)")
     
     elif strategy == OptimizationStrategy.PAY_OFF_IN_PROMO:
         # NEW LOGIC: This is a "soft constraint".

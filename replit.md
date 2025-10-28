@@ -200,3 +200,14 @@ Both Node and Python backends run together in production. The Node server manage
 
 **Ready for Deployment:**
 Application is fully functional and tested. All core features operational.
+
+## Known Limitations
+
+**LINEAR_PER_ACCOUNT Payment Shape:**
+The "Linear (Same Amount Per Account)" payment shape enforces that each account receives the same payment amount every month. This constraint can conflict with optimal debt payoff strategies, particularly when combined with MINIMIZE_TOTAL_INTEREST (AVALANCHE). The strict linearconstraint significantly restricts the solver's solution space, potentially resulting in:
+- Suboptimal payment plans
+- Longer payoff timelines
+- Higher total interest costs
+
+**Recommendation:** Use the "Optimized (Variable Amounts)" payment shape for best results. This allows the solver to dynamically allocate payments month-to-month for optimal interest minimization and faster debt payoff.
+
