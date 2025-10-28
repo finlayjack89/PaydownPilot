@@ -253,14 +253,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).send({ message: "Missing required data" });
       }
 
-      // Transform data to match Python FastAPI schema
+      // Transform data to match Python FastAPI schema (snake_case)
       const portfolioInput = {
-        accounts: accounts.map((acc: any) => ({
+        accounts: accounts.map((acc: any, index: number) => ({
+          account_id: `acc_${index}`,
           lender_name: acc.lenderName,
           account_type: acc.accountType,
           current_balance_cents: acc.currentBalanceCents,
           apr_standard_bps: acc.aprStandardBps,
           payment_due_day: acc.paymentDueDay,
+          min_payment_rule_type: "GREATER_OF",
           min_payment_rule: {
             fixed_cents: acc.minPaymentRuleFixedCents || 0,
             percentage_bps: acc.minPaymentRulePercentageBps || 0,
@@ -273,8 +275,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })),
         budget: {
           monthly_budget_cents: budget.monthlyBudgetCents,
-          future_changes: budget.futureChanges || [],
-          lump_sum_payments: budget.lumpSumPayments || [],
+          future_changes: (budget.futureChanges || []).map((change: any) => ({
+            effective_date: change.effectiveDate,
+            new_monthly_budget_cents: change.newMonthlyBudgetCents,
+          })),
+          lump_sum_payments: (budget.lumpSumPayments || []).map((payment: any) => ({
+            payment_date: payment.paymentDate,
+            amount_cents: payment.amountCents,
+            target_lender_name: payment.targetLenderName,
+          })),
         },
         preferences: {
           strategy: preferences.strategy,
@@ -292,15 +301,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       if (!pythonResponse.ok) {
-        const errorData = await pythonResponse.json();
-        throw new Error(errorData.detail || "Python backend returned error");
+        let errorMessage = "Python solver failed";
+        try {
+          const errorData = await pythonResponse.json();
+          errorMessage = errorData.detail || errorMessage;
+        } catch (e) {
+          errorMessage = `Solver returned ${pythonResponse.status}`;
+        }
+        return res.status(400).send({ 
+          message: errorMessage,
+          status: "ERROR" 
+        });
       }
 
       const pythonResult = await pythonResponse.json();
 
+      // Validate solver response
+      if (!pythonResult.status) {
+        return res.status(500).send({ 
+          message: "Invalid response from solver",
+          status: "ERROR" 
+        });
+      }
+
       // Transform Python response back to our schema
       let planData: any[] = [];
-      let status = "OPTIMAL";
+      let status = pythonResult.status;
+      let errorMessage = pythonResult.error_message || null;
 
       if (pythonResult.status === "OPTIMAL" && pythonResult.plan) {
         planData = pythonResult.plan.map((result: any) => ({
@@ -311,8 +338,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           principalPaidCents: result.principal_paid_cents,
           endingBalanceCents: result.ending_balance_cents,
         }));
+      } else if (pythonResult.status === "INFEASIBLE") {
+        return res.status(400).send({
+          message: errorMessage || "Budget too low to cover minimum payments. Please increase your monthly budget.",
+          status: "INFEASIBLE"
+        });
+      } else if (pythonResult.status === "UNBOUNDED") {
+        return res.status(400).send({
+          message: errorMessage || "Optimization problem is unbounded. Please check your account data.",
+          status: "UNBOUNDED"
+        });
       } else {
-        status = pythonResult.status;
+        return res.status(500).send({
+          message: errorMessage || "Solver failed with unknown error",
+          status: pythonResult.status
+        });
       }
 
       // Calculate totals for AI explanation
