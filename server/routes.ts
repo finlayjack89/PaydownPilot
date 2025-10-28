@@ -253,14 +253,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).send({ message: "Missing required data" });
       }
 
-      // TODO: Call Python FastAPI backend to run optimization
-      // For now, generate mock plan data
-      const mockPlanData = generateMockPlanData(accounts, budget, preferences);
-      
-      // Calculate totals
+      // Transform data to match Python FastAPI schema
+      const portfolioInput = {
+        accounts: accounts.map((acc: any) => ({
+          lender_name: acc.lenderName,
+          account_type: acc.accountType,
+          current_balance_cents: acc.currentBalanceCents,
+          apr_standard_bps: acc.aprStandardBps,
+          payment_due_day: acc.paymentDueDay,
+          min_payment_rule: {
+            fixed_cents: acc.minPaymentRuleFixedCents || 0,
+            percentage_bps: acc.minPaymentRulePercentageBps || 0,
+            includes_interest: acc.minPaymentRuleIncludesInterest || false,
+          },
+          promo_end_date: acc.promoEndDate || null,
+          promo_duration_months: acc.promoDurationMonths || null,
+          account_open_date: acc.accountOpenDate || planStartDate,
+          notes: acc.notes || "",
+        })),
+        budget: {
+          monthly_budget_cents: budget.monthlyBudgetCents,
+          future_changes: budget.futureChanges || [],
+          lump_sum_payments: budget.lumpSumPayments || [],
+        },
+        preferences: {
+          strategy: preferences.strategy,
+          payment_shape: preferences.paymentShape,
+        },
+        plan_start_date: planStartDate || new Date().toISOString().split('T')[0],
+      };
+
+      // Call Python FastAPI backend
+      const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || "http://127.0.0.1:8000";
+      const pythonResponse = await fetch(`${pythonBackendUrl}/generate-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(portfolioInput),
+      });
+
+      if (!pythonResponse.ok) {
+        const errorData = await pythonResponse.json();
+        throw new Error(errorData.detail || "Python backend returned error");
+      }
+
+      const pythonResult = await pythonResponse.json();
+
+      // Transform Python response back to our schema
+      let planData: any[] = [];
+      let status = "OPTIMAL";
+
+      if (pythonResult.status === "OPTIMAL" && pythonResult.plan) {
+        planData = pythonResult.plan.map((result: any) => ({
+          month: result.month,
+          lenderName: result.lender_name,
+          paymentCents: result.payment_cents,
+          interestChargedCents: result.interest_charged_cents,
+          principalPaidCents: result.principal_paid_cents,
+          endingBalanceCents: result.ending_balance_cents,
+        }));
+      } else {
+        status = pythonResult.status;
+      }
+
+      // Calculate totals for AI explanation
       const totalDebt = accounts.reduce((sum: number, acc: any) => sum + acc.currentBalanceCents, 0);
-      const totalInterest = mockPlanData.reduce((sum: number, r: any) => sum + r.interestChargedCents, 0);
-      const payoffMonths = Math.max(...mockPlanData.map((r: any) => r.month));
+      const totalInterest = planData.reduce((sum: number, r: any) => sum + r.interestChargedCents, 0);
+      const payoffMonths = planData.length > 0 ? Math.max(...planData.map((r: any) => r.month)) : 0;
 
       // Generate AI explanation
       const explanation = await generatePlanExplanation(
@@ -275,8 +333,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const plan = await storage.createPlan({
         id: randomUUID(),
         userId,
-        planData: mockPlanData,
-        status: "OPTIMAL",
+        planData,
+        status,
         explanation,
         createdAt: new Date(),
       });
@@ -317,60 +375,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-// Mock plan generation (will be replaced with Python backend call)
-function generateMockPlanData(accounts: any[], budget: any, preferences: any) {
-  const planData: any[] = [];
-  const monthlyBudget = budget.monthlyBudgetCents;
-  
-  // Create a simple debt snowball simulation
-  const balances = accounts.map((acc: any) => ({
-    lenderName: acc.lenderName,
-    balance: acc.currentBalanceCents,
-    apr: acc.aprStandardBps / 10000,
-    minPayment: Math.max(
-      acc.minPaymentRuleFixedCents,
-      (acc.currentBalanceCents * acc.minPaymentRulePercentageBps) / 10000
-    ),
-  }));
-
-  let month = 1;
-  const maxMonths = 120;
-
-  while (month <= maxMonths && balances.some(b => b.balance > 0)) {
-    let remainingBudget = monthlyBudget;
-
-    balances.forEach((acc) => {
-      if (acc.balance <= 0) return;
-
-      // Calculate interest
-      const monthlyRate = acc.apr / 12;
-      const interestCharged = Math.round(acc.balance * monthlyRate);
-      
-      // Determine payment
-      const minPayment = Math.min(acc.minPayment, acc.balance + interestCharged);
-      const payment = Math.min(
-        Math.max(minPayment, remainingBudget),
-        acc.balance + interestCharged
-      );
-
-      remainingBudget -= payment;
-
-      // Apply payment
-      const principalPaid = payment - interestCharged;
-      acc.balance = Math.max(0, acc.balance - principalPaid);
-
-      planData.push({
-        month,
-        lenderName: acc.lenderName,
-        paymentCents: payment,
-        interestChargedCents: interestCharged,
-        principalPaidCents: principalPaid,
-        endingBalanceCents: acc.balance,
-      });
-    });
-
-    month++;
-  }
-
-  return planData;
-}
+// Note: Mock plan generation removed - now using Python FastAPI backend integration
