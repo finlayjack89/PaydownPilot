@@ -382,6 +382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const plan = await storage.createPlan({
         id: randomUUID(),
         userId,
+        planStartDate: planStartDate || new Date().toISOString().split('T')[0],
         planData,
         status,
         explanation,

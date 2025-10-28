@@ -1,9 +1,10 @@
-modules = ["nodejs-20", "web", "postgresql-16"]
+modules = ["nodejs-20", "web", "postgresql-16", "python-3.11"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
+packages = ["libxcrypt"]
 
 [deployment]
 deploymentTarget = "autoscale"
@@ -21,10 +22,6 @@ externalPort = 3001
 [[ports]]
 localPort = 40343
 externalPort = 3000
-
-[[ports]]
-localPort = 44497
-externalPort = 3002
 
 [env]
 PORT = "5000"

@@ -151,3 +151,52 @@ Preferred communication style: Simple, everyday language.
 - **Solution:** shadcn/ui (copy-paste components) on Radix UI primitives
 - **Rationale:** Full control over components, no runtime dependency, Radix ensures accessibility
 - **Customization:** Tailwind with custom color system and spacing primitives
+## Python Backend Integration
+
+**Setup:**
+The Python FastAPI backend (`main.py`, `solver_engine.py`, `schemas.py`) runs automatically when you start the Node.js development server. The Node server spawns a Python child process on port 8000.
+
+**Architecture:**
+- `server/index.ts` starts `uvicorn` as a child process in development mode
+- Python backend listens on `http://127.0.0.1:8000`
+- Node backend proxies optimization requests to Python via `/api/plans/generate`
+- Python uses Google OR-Tools CP-SAT solver for mathematical optimization
+- Results are transformed between TypeScript (camelCase) and Python (snake_case) schemas
+
+**Files:**
+- `main.py` - FastAPI application with `/generate-plan` endpoint
+- `solver_engine.py` - OR-Tools CP-SAT solver implementation with debt optimization logic
+- `schemas.py` - Pydantic models for request/response validation
+
+**Dependencies:**
+- Python 3.11 (installed via Nix)
+- fastapi, uvicorn, pydantic, ortools, python-dateutil (installed via uv package manager)
+
+**Deployment:**
+Both Node and Python backends run together in production. The Node server manages the Python process lifecycle (start/stop/restart).
+
+## Recent Updates (October 28, 2025)
+
+✅ **Core MVP Complete - All Features Working End-to-End:**
+
+1. **Python OR-Tools Integration** - Integrated Python FastAPI backend that auto-starts with Node server, successfully generating OPTIMAL debt paydown plans using Google OR-Tools CP-SAT solver
+
+2. **AI Lender Rule Discovery** - Claude Sonnet 4 integration for automatic minimum payment rule research with human-in-the-loop confirmation
+
+3. **Future Budget Changes & Lump Sum Payments** - UI for managing future budget adjustments and one-time payments with validation and targeting
+
+4. **Full Stack Integration** - Complete data flow from frontend → Node API → Python solver → AI explanation → Database → Dashboard visualization
+
+**Test Results:**
+- End-to-end test passed: User registration → Account creation → Budget/Preferences → Plan generation → Dashboard display
+- Verified metrics: $3,000 debt paid in 10 months with $281.60 total interest
+- All constraints satisfied: minimum payments, budget limits, date sequencing
+
+**Technical Fixes:**
+- Fixed plan_start_date database constraint (now defaults to current date)
+- Fixed SelectItem empty value bug (using "__ANY__" sentinel)
+- Improved error logging for Python backend communication
+- Schema transformation working correctly between TypeScript and Python
+
+**Ready for Deployment:**
+Application is fully functional and tested. All core features operational.

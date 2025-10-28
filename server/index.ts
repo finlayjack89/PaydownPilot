@@ -1,8 +1,51 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { spawn } from "child_process";
 
 const app = express();
+
+// Start Python FastAPI backend in development mode
+let pythonProcess: any = null;
+if (process.env.NODE_ENV === "development") {
+  log("Starting Python FastAPI backend on port 8000...");
+  pythonProcess = spawn("uvicorn", ["main:app", "--host", "127.0.0.1", "--port", "8000", "--reload"], {
+    cwd: process.cwd(),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  pythonProcess.stdout?.on("data", (data: Buffer) => {
+    console.log(`[Python] ${data.toString().trim()}`);
+  });
+
+  pythonProcess.stderr?.on("data", (data: Buffer) => {
+    console.error(`[Python] ${data.toString().trim()}`);
+  });
+
+  pythonProcess.on("error", (error: Error) => {
+    console.error("[Python] Failed to start:", error.message);
+  });
+
+  pythonProcess.on("exit", (code: number) => {
+    if (code !== 0) {
+      console.error(`[Python] Exited with code ${code}`);
+    }
+  });
+
+  // Cleanup Python process on exit
+  process.on("exit", () => {
+    if (pythonProcess) {
+      pythonProcess.kill();
+    }
+  });
+
+  process.on("SIGINT", () => {
+    if (pythonProcess) {
+      pythonProcess.kill();
+    }
+    process.exit();
+  });
+}
 
 declare module 'http' {
   interface IncomingMessage {
