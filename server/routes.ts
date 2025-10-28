@@ -302,15 +302,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!pythonResponse.ok) {
         let errorMessage = "Python solver failed";
+        let errorDetail = null;
         try {
           const errorData = await pythonResponse.json();
-          errorMessage = errorData.detail || errorMessage;
+          errorDetail = errorData.detail;
+          errorMessage = JSON.stringify(errorData.detail || errorData) || errorMessage;
+          console.error("Python backend error:", JSON.stringify(errorData, null, 2));
         } catch (e) {
           errorMessage = `Solver returned ${pythonResponse.status}`;
         }
+        console.error("Python backend request failed:", {
+          status: pythonResponse.status,
+          url: `${pythonBackendUrl}/generate-plan`,
+          error: errorMessage
+        });
         return res.status(400).send({ 
           message: errorMessage,
-          status: "ERROR" 
+          status: "ERROR",
+          detail: errorDetail
         });
       }
 
