@@ -64,14 +64,17 @@ export default function Generate() {
       
       return result;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setProgress(100);
       setStatusMessage("Plan generated successfully!");
-      queryClient.invalidateQueries({ queryKey: ["/api/plans"] });
+      
+      // Ensure the plan is available before redirecting
+      await queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
+      await queryClient.refetchQueries({ queryKey: ["/api/plans/latest"] });
       
       setTimeout(() => {
         setLocation("/dashboard");
-      }, 1000);
+      }, 500);
     },
     onError: (error: any) => {
       toast({

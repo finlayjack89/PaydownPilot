@@ -22,8 +22,10 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
 
-  const { data: plan, isLoading } = useQuery({
+  const { data: plan, isLoading, isError, refetch } = useQuery({
     queryKey: ["/api/plans/latest"],
+    retry: 3,
+    retryDelay: 1000,
   });
 
   const { data: accounts = [] } = useQuery({
