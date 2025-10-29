@@ -1,255 +1,62 @@
 # Paydown Pilot
 
 ## Overview
-
-Paydown Pilot is a web-based debt optimization application that helps users create deterministic, optimized monthly payment plans across multiple credit accounts (credit cards, BNPL, and loans). The system uses Google OR-Tools CP-SAT solver to generate mathematically optimal repayment strategies that minimize interest and fit within user budgets while honoring promotional periods.
-
-The application follows a strict "Two-Brain" architecture: a deterministic Math Brain (Python solver) handles all financial calculations, while a Language Brain (Anthropic Claude) assists with user interaction and data research. This separation ensures financial accuracy while providing intelligent user assistance.
+Paydown Pilot is a web-based debt optimization application designed to help users manage and pay off multiple credit accounts efficiently. It utilizes a deterministic Math Brain (Google OR-Tools CP-SAT solver) for mathematically optimal repayment strategies and a Language Brain (Anthropic Claude) for user interaction and data research. The application aims to minimize interest, fit user budgets, and honor promotional periods, providing clear and trustworthy financial guidance.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend Architecture
+### Frontend
+- **Technology Stack**: React with TypeScript (Vite), Wouter, TanStack Query, shadcn/ui (Radix UI), Tailwind CSS.
+- **Design Philosophy**: Hybrid design combining Material Design 3, Stripe, and Linear for trust, clarity, and efficient data entry. Typography uses Inter for UI and JetBrains Mono for financial values.
+- **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, and a dashboard with ECharts visualizations.
 
-**Technology Stack:**
-- React with TypeScript using Vite as the build tool
-- Wouter for client-side routing
-- TanStack Query (React Query) for server state management
-- shadcn/ui component library built on Radix UI primitives
-- Tailwind CSS for styling with a custom design system
-
-**Design Philosophy:**
-- Hybrid design system combining Material Design 3, Stripe (financial clarity), and Linear (clean aesthetics)
-- Focus on trust, information clarity, and efficient data entry
-- Typography: Inter for UI, JetBrains Mono for financial values
-- Component-based architecture with reusable UI primitives
-
-**Key Pages:**
-- Authentication flow (login/signup)
-- Multi-step onboarding for user profile and location setup
-- Account management (CRUD operations for debt accounts)
-- Budget configuration with future changes and lump sum payments
-- Preference selection (optimization strategy and payment shape)
-- Plan generation with progress tracking
-- Dashboard with debt timeline visualization using ECharts
-
-### Backend Architecture
-
-**Technology Stack:**
-- Express.js server with TypeScript
-- Drizzle ORM for database operations
-- Passport.js with local strategy for authentication
-- Session-based authentication with 30-minute timeout
-- Python backend (FastAPI indicated in attached files) for optimization engine
-
-**API Structure:**
-- RESTful endpoints under `/api` prefix
-- Authentication endpoints: `/api/auth/signup`, `/api/auth/login`, `/api/auth/me`, `/api/auth/logout`
-- Resource endpoints: `/api/accounts`, `/api/budget`, `/api/preferences`, `/api/plans`
-- AI integration: `/api/lender-rules/discover` for automated rule discovery
-
-**Authentication & Security:**
-- Password hashing using scrypt with salting
-- Session management with express-session
-- MFA requirement enforced (policy level)
-- Email verification before use
-- Secure credential storage
+### Backend
+- **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication. Python backend (FastAPI) for the optimization engine.
+- **API Structure**: RESTful endpoints (`/api/auth`, `/api/accounts`, `/api/budget`, `/api/preferences`, `/api/plans`, `/api/lender-rules/discover`).
+- **Authentication & Security**: Scrypt password hashing, express-session management (30-minute timeout), MFA policy, email verification, secure credential storage.
 
 ### Data Storage
+- **Database**: PostgreSQL (Neon serverless) with WebSocket support, Drizzle ORM.
+- **Schema Design**: `users`, `accounts`, `budgets`, `preferences`, `plans`, `lenderRules`.
+- **Key Data Patterns**: Monetary values in cents (integers), percentages in basis points (bps), JSONB for nested data, cascade deletes.
 
-**Database:**
-- PostgreSQL via Neon serverless
-- WebSocket support for real-time database operations
-- Drizzle ORM for type-safe database queries and migrations
-
-**Schema Design:**
-- `users`: Core user profile with country/region/currency
-- `accounts`: Debt accounts with detailed financial parameters
-- `budgets`: Monthly budget with future changes and lump sum payments
-- `preferences`: User optimization strategy and payment shape preferences
-- `plans`: Generated repayment plans with full monthly breakdown
-- `lenderRules`: Cached minimum payment rules for lenders by country
-
-**Key Data Patterns:**
-- All monetary values stored in cents (integers) for precision
-- APR and percentages stored in basis points (bps) to avoid floating point errors
-- Dates for promotional periods and payment schedules
-- JSONB fields for complex nested data (future changes, lump sums, plan results)
-- Cascade deletes for user data cleanup
-
-### External Dependencies
-
-**AI Services:**
-- Anthropic Claude Sonnet 4 (claude-sonnet-4-20250514) for lender rule discovery and plan explanations
-- Language Brain handles user interaction and data research
-- Explicitly forbidden from performing financial calculations
-
-**Optimization Engine:**
-- Google OR-Tools CP-SAT solver (Python implementation in solver_engine.py)
-- Deterministic mathematical optimization
-- Handles complex constraints: minimum payments, promotional windows, budget limits
-- Multiple optimization strategies: minimize interest, maximize payoff speed, honor promos
-
-**UI Component Libraries:**
-- Radix UI for accessible component primitives (dialogs, dropdowns, selects, etc.)
-- ECharts for data visualization (debt timeline charts)
-- React Hook Form with Zod for form validation
-- date-fns for date manipulation
-
-**Database:**
-- Neon serverless PostgreSQL with WebSocket support
-- Drizzle Kit for schema migrations
-
-**Development Tools:**
-- Vite plugins for runtime error overlay and development banners
-- TypeScript for type safety across the stack
-- ESBuild for server bundling
+### Python Backend Integration
+- **Setup**: FastAPI backend (`main.py`, `solver_engine.py`, `schemas.py`) runs as a child process of the Node.js server (port 8000).
+- **Functionality**: Uses Google OR-Tools CP-SAT solver for mathematical optimization. Node.js proxies requests to Python.
+- **Reliability**: Includes health checks, retry logic with exponential backoff for plan generation, and auto-restart capability for crashed Python processes.
 
 ### Key Architectural Decisions
+- **Two-Brain Separation**: Divides financial calculation (deterministic Python solver) from AI assistance (Anthropic Claude) to ensure accuracy and intelligent user support.
+- **Monetary Precision**: All currency stored as cents and percentages as basis points to prevent floating-point errors.
+- **Session-Based Authentication**: Uses Passport.js with express-session for secure, time-sensitive authentication.
+- **Serverless Database**: Neon serverless PostgreSQL for scalability and reliability.
+- **Client-Side State Management**: TanStack Query for efficient server state management and caching.
+- **Form Handling**: React Hook Form with Zod for type-safe, validated forms.
+- **Component Design System**: shadcn/ui built on Radix UI primitives for a consistent, accessible, and customizable UI.
 
-**Two-Brain Separation:**
-- **Problem:** Need both accurate financial calculations and intelligent user assistance
-- **Solution:** Strict separation between deterministic solver (Math Brain) and AI assistant (Language Brain)
-- **Rationale:** Ensures financial accuracy while providing smart features like automated rule discovery
-- **Implementation:** Python solver is isolated; Claude handles only research and explanation tasks
+## External Dependencies
 
-**Monetary Precision:**
-- **Problem:** Floating point errors are unacceptable in financial calculations
-- **Solution:** All currency stored as cents (integers), all percentages as basis points
-- **Rationale:** Eliminates rounding errors and ensures exact calculations
-- **Trade-off:** Requires conversion functions throughout the UI layer
+**AI Services:**
+- Anthropic Claude Sonnet 4: Used for lender rule discovery and plan explanations. Not used for financial calculations.
 
-**Session-Based Authentication:**
-- **Problem:** Need secure authentication with reasonable timeout
-- **Solution:** Passport.js with express-session, 30-minute inactivity timeout
-- **Rationale:** Balances security with user convenience for sensitive financial data
-- **Alternative Considered:** JWT tokens (rejected due to session management complexity)
+**Optimization Engine:**
+- Google OR-Tools CP-SAT solver: Python implementation for deterministic mathematical debt optimization.
 
-**Serverless Database:**
-- **Problem:** Need scalable, reliable database with minimal ops overhead
-- **Solution:** Neon serverless PostgreSQL with WebSocket support
-- **Rationale:** Auto-scaling, connection pooling, and modern developer experience
-- **Trade-off:** Vendor lock-in, but mitigated by standard PostgreSQL compatibility
+**UI Component Libraries:**
+- Radix UI: Accessible component primitives.
+- ECharts: Data visualization (debt timeline).
+- React Hook Form with Zod: Form validation.
+- date-fns: Date manipulation.
+- shadcn/ui: Custom component library built on Radix UI.
 
-**Client-Side State Management:**
-- **Problem:** Complex data fetching and caching requirements
-- **Solution:** TanStack Query for server state, React hooks for local state
-- **Rationale:** Automatic caching, background refetching, optimistic updates
-- **Alternatives Considered:** Redux (too complex), Context API (insufficient caching)
+**Database:**
+- Neon serverless PostgreSQL: Cloud-hosted PostgreSQL with WebSocket support.
+- Drizzle Kit: Database schema migrations.
 
-**Form Handling:**
-- **Problem:** Complex multi-step forms with validation
-- **Solution:** React Hook Form with Zod schema validation
-- **Rationale:** Type-safe validation matching backend schemas, excellent performance
-- **Integration:** Drizzle-zod generates Zod schemas from database schema for consistency
-
-**Component Design System:**
-- **Problem:** Need consistent, accessible UI that builds trust
-- **Solution:** shadcn/ui (copy-paste components) on Radix UI primitives
-- **Rationale:** Full control over components, no runtime dependency, Radix ensures accessibility
-- **Customization:** Tailwind with custom color system and spacing primitives
-## Python Backend Integration
-
-**Setup:**
-The Python FastAPI backend (`main.py`, `solver_engine.py`, `schemas.py`) runs automatically when you start the Node.js development server. The Node server spawns a Python child process on port 8000.
-
-**Architecture:**
-- `server/index.ts` starts `uvicorn` as a child process in development mode
-- Python backend listens on `http://127.0.0.1:8000`
-- Node backend proxies optimization requests to Python via `/api/plans/generate`
-- Python uses Google OR-Tools CP-SAT solver for mathematical optimization
-- Results are transformed between TypeScript (camelCase) and Python (snake_case) schemas
-
-**Files:**
-- `main.py` - FastAPI application with `/generate-plan` endpoint
-- `solver_engine.py` - OR-Tools CP-SAT solver implementation with debt optimization logic
-- `schemas.py` - Pydantic models for request/response validation
-
-**Dependencies:**
-- Python 3.11 (installed via Nix)
-- fastapi, uvicorn, pydantic, ortools, python-dateutil (installed via uv package manager)
-
-**Deployment:**
-Both Node and Python backends run together in production. The Node server manages the Python process lifecycle (start/stop/restart).
-
-## Recent Updates
-
-### October 29, 2025 - Authentication System Overhaul ✅
-
-**Fixed Critical Cross-Tab Authentication Issues:**
-
-The app now properly handles authentication when opened in new browser tabs or external windows. Previously, users would experience:
-- Auto-bypass of login page in new tabs
-- 401 authentication errors when adding accounts
-- Session cookies not persisting across tabs
-
-**Changes Implemented:**
-
-1. **Removed localStorage Auto-Login** (`client/src/lib/auth-context.tsx`)
-   - Previously: App created local guest user from localStorage without server validation
-   - Now: Only relies on server-side session checks via GET /api/auth/me
-   - Clears stale localStorage flags when session validation fails
-
-2. **Fixed Default Route Logic** (`client/src/App.tsx`)
-   - Previously: Always redirected to /dashboard (even for unauthenticated users)
-   - Now: Checks authentication state and routes accordingly:
-     - Unauthenticated → /login
-     - Authenticated → /dashboard
-   - Added loading state during authentication check
-
-3. **Environment-Aware Session Cookie Configuration** (`server/auth.ts`)
-   - Development: `secure: false`, `sameSite: "lax"` (works with Replit's non-HTTPS)
-   - Production: `secure: true`, `sameSite: "none"` (requires HTTPS, prevents CSRF)
-   - Both environments: `httpOnly: true` (prevents XSS attacks)
-   - Added `trust proxy` configuration for Replit's proxy setup
-
-4. **Fixed Account Form Validation** (`client/src/components/add-account-dialog.tsx`)
-   - Added minimum payment fields to button disabled logic
-   - Prevents submission when required fields are empty
-
-**Test Results:**
-- ✅ New browser tabs correctly show login page
-- ✅ Guest mode establishes proper server sessions
-- ✅ Session cookies persist across all API calls
-- ✅ Account creation succeeds without 401 errors
-- ✅ Budget operations work correctly
-- ✅ End-to-end authentication flow fully functional
-
-**Security Improvements:**
-- Environment-based secure cookie flags
-- HttpOnly cookies prevent XSS attacks
-- SameSite protection against CSRF
-- Server-side session validation on all protected routes
-- No sensitive data stored in client-side storage
-
-### October 28, 2025 - Core MVP Complete ✅
-
-**Full-Stack Debt Optimization System Working End-to-End:**
-
-1. **Python OR-Tools Integration** - Python FastAPI backend auto-starts with Node server, generating OPTIMAL debt paydown plans using Google OR-Tools CP-SAT solver
-
-2. **AI Lender Rule Discovery** - Claude Sonnet 4 integration for automatic minimum payment rule research with human-in-the-loop confirmation
-
-3. **Future Budget Changes & Lump Sum Payments** - UI for managing future budget adjustments and one-time payments with validation
-
-4. **Full Stack Integration** - Complete data flow: Frontend → Node API → Python solver → AI explanation → Database → Dashboard visualization
-
-**Technical Fixes:**
-- Fixed critical solver objectives (MINIMIZE_TOTAL_INTEREST, TARGET_MAX_BUDGET)
-- Resolved TypeScript compilation errors in server routes
-- Fixed plan_start_date database constraint
-- Schema transformation between TypeScript and Python working correctly
-
-## Known Limitations
-
-**LINEAR_PER_ACCOUNT Payment Shape:**
-The "Linear (Same Amount Per Account)" payment shape enforces that each account receives the same payment amount every month. This constraint can conflict with optimal debt payoff strategies, particularly when combined with MINIMIZE_TOTAL_INTEREST (AVALANCHE). The strict linearconstraint significantly restricts the solver's solution space, potentially resulting in:
-- Suboptimal payment plans
-- Longer payoff timelines
-- Higher total interest costs
-
-**Recommendation:** Use the "Optimized (Variable Amounts)" payment shape for best results. This allows the solver to dynamically allocate payments month-to-month for optimal interest minimization and faster debt payoff.
-
+**Development Tools:**
+- Vite: Frontend build tool.
+- TypeScript: Type safety.
+- ESBuild: Server bundling.
