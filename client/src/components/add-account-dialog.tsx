@@ -349,7 +349,15 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saveMutation.isPending || !lenderName || !balance || !apr || !dueDay}
+            disabled={
+              saveMutation.isPending || 
+              !lenderName || 
+              !balance || 
+              !apr || 
+              !dueDay || 
+              !fixedAmount || 
+              !percentage
+            }
             data-testid="button-save-account"
           >
             {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

@@ -37,13 +37,16 @@ export function setupAuth(app: Express) {
     cookie: {
       maxAge: 30 * 60 * 1000, // 30 minutes
       httpOnly: true,
-      secure: isProduction, // Use secure cookies in production
-      sameSite: isProduction ? "none" : "lax", // Allow cross-site in production
+      secure: isProduction, // Secure cookies in production only
+      sameSite: isProduction ? "none" : "lax", // 'none' for cross-site in prod, 'lax' for dev
     },
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
     }),
   };
+
+  // Enable trust proxy for Replit deployment (required for secure cookies behind proxy)
+  app.set("trust proxy", 1);
 
   app.use(session(sessionSettings));
   app.use(passport.initialize());

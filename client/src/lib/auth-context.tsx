@@ -24,35 +24,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      // Check for guest mode first
-      const guestMode = localStorage.getItem("guestMode");
-      if (guestMode === "true") {
-        // Re-establish guest session with server
-        const guestResponse = await fetch("/api/auth/guest", {
-          method: "POST",
-          credentials: "include",
-        });
-        
-        if (guestResponse.ok) {
-          const userData = await guestResponse.json();
-          setUser(userData);
-          setIsLoading(false);
-          return;
-        } else {
-          // If guest login fails, clear guest mode and fall through to normal auth check
-          localStorage.removeItem("guestMode");
-        }
-      }
-
+      // Check server-side session only - no localStorage auto-login
       const response = await fetch("/api/auth/me", {
         credentials: "include",
       });
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
+      } else {
+        // Clear any stale guest mode flag
+        localStorage.removeItem("guestMode");
       }
     } catch (error) {
       console.error("Auth check failed:", error);
+      localStorage.removeItem("guestMode");
     } finally {
       setIsLoading(false);
     }

@@ -30,9 +30,20 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
 }
 
 function Router() {
+  const { user, isLoading } = useAuth();
+  
   return (
     <Switch>
-      <Route path="/" component={() => <Redirect to="/dashboard" />} />
+      <Route path="/" component={() => {
+        if (isLoading) {
+          return (
+            <div className="flex min-h-screen items-center justify-center">
+              <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+            </div>
+          );
+        }
+        return user ? <Redirect to="/dashboard" /> : <Redirect to="/login" />;
+      }} />
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
