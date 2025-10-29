@@ -72,6 +72,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  app.post("/api/auth/guest", (req, res) => {
+    // Create a guest user session
+    const guestUser = {
+      id: "guest-user",
+      email: "guest@example.com",
+      name: "Guest User",
+      country: "US",
+      region: null,
+      currency: "USD",
+      createdAt: new Date(),
+    };
+    
+    req.login(guestUser, (err) => {
+      if (err) {
+        return res.status(500).send({ message: "Guest login failed" });
+      }
+      res.json(guestUser);
+    });
+  });
+
   app.get("/api/auth/me", (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).send({ message: "Not authenticated" });

@@ -90,17 +90,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const continueAsGuest = async () => {
+    const response = await fetch("/api/auth/guest", {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      throw new Error("Guest mode failed");
+    }
+
+    const userData = await response.json();
     localStorage.setItem("guestMode", "true");
-    const guestUser: User = {
-      id: "guest-user",
-      email: "guest@example.com",
-      name: "Guest User",
-      country: "US",
-      region: null,
-      currency: "USD",
-      createdAt: new Date(),
-    };
-    setUser(guestUser);
+    setUser(userData);
   };
 
   const logout = async () => {

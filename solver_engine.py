@@ -462,16 +462,15 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
     
     elif strategy == OptimizationStrategy.TARGET_MAX_BUDGET:
         # Goal: Pay off debt as fast as possible by maximizing payments
-        # We minimize interest, but with a secondary objective to maximize total payments
-        # This encourages using the full budget available
-        all_payment_variables: List[cp_model.IntVar] = list(payments.values())
-        total_payments = sum(all_payment_variables)
+        # Minimize time with debt by minimizing sum of all balances across all months
+        all_balance_variables: List[cp_model.IntVar] = list(balances.values())
+        total_balances_over_time = sum(all_balance_variables)
         
-        # Primary: minimize interest, Secondary: maximize payments (minimize negative payments)
-        # We weight interest much higher than payments to prioritize interest minimization
-        # but still encourage budget utilization
-        model.Minimize(total_interest_cost * 1000 - total_payments)
-        print(f"Objective set to: {strategy.value} (minimize interest, maximize budget usage)")
+        # Primary: minimize balances over time (faster payoff), Secondary: minimize interest
+        # Weight balances much higher since the goal is to pay off ASAP
+        # Balances in cents, interest in cents - balance weight 10x interest weight
+        model.Minimize(total_balances_over_time * 10 + total_interest_cost)
+        print(f"Objective set to: {strategy.value} (minimize time with debt, then interest)")
     
     elif strategy == OptimizationStrategy.PAY_OFF_IN_PROMO:
         # NEW LOGIC: This is a "soft constraint".

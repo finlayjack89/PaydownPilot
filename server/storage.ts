@@ -151,4 +151,155 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new DatabaseStorage();
+// Guest mode in-memory storage
+class GuestStorageWrapper implements IStorage {
+  private dbStorage: DatabaseStorage;
+  private guestData: {
+    accounts: Account[];
+    budget: Budget | null;
+    preferences: Preference | null;
+    plans: Plan[];
+  };
+
+  constructor(dbStorage: DatabaseStorage) {
+    this.dbStorage = dbStorage;
+    this.guestData = {
+      accounts: [],
+      budget: null,
+      preferences: null,
+      plans: [],
+    };
+  }
+
+  private isGuest(userId: string): boolean {
+    return userId === "guest-user";
+  }
+
+  // User methods - pass through to database
+  async getUser(id: string): Promise<User | undefined> {
+    return this.dbStorage.getUser(id);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return this.dbStorage.getUserByEmail(email);
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    return this.dbStorage.createUser(user);
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    return this.dbStorage.updateUser(id, updates);
+  }
+
+  // Account methods - use memory for guest
+  async getAccountsByUserId(userId: string): Promise<Account[]> {
+    if (this.isGuest(userId)) {
+      return this.guestData.accounts;
+    }
+    return this.dbStorage.getAccountsByUserId(userId);
+  }
+
+  async getAccount(id: string): Promise<Account | undefined> {
+    // Check guest data first
+    const guestAccount = this.guestData.accounts.find(a => a.id === id);
+    if (guestAccount) return guestAccount;
+    return this.dbStorage.getAccount(id);
+  }
+
+  async createAccount(account: InsertAccount): Promise<Account> {
+    if (this.isGuest(account.userId)) {
+      const newAccount = { ...account, createdAt: new Date() } as Account;
+      this.guestData.accounts.push(newAccount);
+      return newAccount;
+    }
+    return this.dbStorage.createAccount(account);
+  }
+
+  async updateAccount(id: string, updates: Partial<Account>): Promise<Account | undefined> {
+    const guestIdx = this.guestData.accounts.findIndex(a => a.id === id);
+    if (guestIdx !== -1) {
+      this.guestData.accounts[guestIdx] = { ...this.guestData.accounts[guestIdx], ...updates };
+      return this.guestData.accounts[guestIdx];
+    }
+    return this.dbStorage.updateAccount(id, updates);
+  }
+
+  async deleteAccount(id: string): Promise<void> {
+    const guestIdx = this.guestData.accounts.findIndex(a => a.id === id);
+    if (guestIdx !== -1) {
+      this.guestData.accounts.splice(guestIdx, 1);
+      return;
+    }
+    return this.dbStorage.deleteAccount(id);
+  }
+
+  // Budget methods - use memory for guest
+  async getBudgetByUserId(userId: string): Promise<Budget | undefined> {
+    if (this.isGuest(userId)) {
+      return this.guestData.budget || undefined;
+    }
+    return this.dbStorage.getBudgetByUserId(userId);
+  }
+
+  async createOrUpdateBudget(budget: InsertBudget): Promise<Budget> {
+    if (this.isGuest(budget.userId)) {
+      const newBudget = { ...budget, id: "guest-budget", createdAt: new Date() } as Budget;
+      this.guestData.budget = newBudget;
+      return newBudget;
+    }
+    return this.dbStorage.createOrUpdateBudget(budget);
+  }
+
+  // Preferences methods - use memory for guest
+  async getPreferencesByUserId(userId: string): Promise<Preference | undefined> {
+    if (this.isGuest(userId)) {
+      return this.guestData.preferences || undefined;
+    }
+    return this.dbStorage.getPreferencesByUserId(userId);
+  }
+
+  async createOrUpdatePreferences(prefs: InsertPreference): Promise<Preference> {
+    if (this.isGuest(prefs.userId)) {
+      const newPrefs = { ...prefs, id: "guest-prefs", createdAt: new Date() } as Preference;
+      this.guestData.preferences = newPrefs;
+      return newPrefs;
+    }
+    return this.dbStorage.createOrUpdatePreferences(prefs);
+  }
+
+  // Plan methods - use memory for guest
+  async getPlansByUserId(userId: string): Promise<Plan[]> {
+    if (this.isGuest(userId)) {
+      return this.guestData.plans;
+    }
+    return this.dbStorage.getPlansByUserId(userId);
+  }
+
+  async getLatestPlan(userId: string): Promise<Plan | undefined> {
+    if (this.isGuest(userId)) {
+      return this.guestData.plans[this.guestData.plans.length - 1] || undefined;
+    }
+    return this.dbStorage.getLatestPlan(userId);
+  }
+
+  async createPlan(plan: InsertPlan): Promise<Plan> {
+    if (this.isGuest(plan.userId)) {
+      const newPlan = { ...plan, createdAt: new Date() } as Plan;
+      this.guestData.plans.push(newPlan);
+      return newPlan;
+    }
+    return this.dbStorage.createPlan(plan);
+  }
+
+  // Lender Rules - pass through to database (shared)
+  async getLenderRule(lenderName: string, country: string): Promise<LenderRule | undefined> {
+    return this.dbStorage.getLenderRule(lenderName, country);
+  }
+
+  async createLenderRule(rule: InsertLenderRule): Promise<LenderRule> {
+    return this.dbStorage.createLenderRule(rule);
+  }
+}
+
+export const storage = new GuestStorageWrapper(new DatabaseStorage());

@@ -71,6 +71,20 @@ export function setupAuth(app: Express) {
 
   passport.deserializeUser(async (id: string, done) => {
     try {
+      // Handle guest user specially
+      if (id === "guest-user") {
+        const guestUser = {
+          id: "guest-user",
+          email: "guest@example.com",
+          name: "Guest User",
+          country: "US",
+          region: null,
+          currency: "USD",
+          createdAt: new Date(),
+        };
+        return done(null, guestUser);
+      }
+      
       const user = await storage.getUser(id);
       done(null, user);
     } catch (err) {
