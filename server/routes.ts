@@ -311,11 +311,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Call Python FastAPI backend
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || "http://127.0.0.1:8000";
-      const pythonResponse = await fetch(`${pythonBackendUrl}/generate-plan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(portfolioInput),
-      });
+      console.log(`[Plan Generation] Calling Python backend at ${pythonBackendUrl}/generate-plan`);
+      
+      let pythonResponse;
+      try {
+        pythonResponse = await fetch(`${pythonBackendUrl}/generate-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(portfolioInput),
+        });
+      } catch (fetchError: any) {
+        console.error("[Plan Generation] Failed to reach Python backend:", {
+          url: `${pythonBackendUrl}/generate-plan`,
+          error: fetchError.message,
+          stack: fetchError.stack
+        });
+        return res.status(500).send({ 
+          message: "Could not connect to optimization engine. Please try again.",
+          status: "ERROR"
+        });
+      }
 
       if (!pythonResponse.ok) {
         let errorMessage = "Python solver failed";

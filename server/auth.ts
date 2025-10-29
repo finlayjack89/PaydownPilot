@@ -28,12 +28,17 @@ export async function comparePasswords(
 }
 
 export function setupAuth(app: Express) {
+  const isProduction = process.env.NODE_ENV === "production";
+  
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "paydown-pilot-secret-key",
     resave: false,
     saveUninitialized: false,
     cookie: {
       maxAge: 30 * 60 * 1000, // 30 minutes
+      httpOnly: true,
+      secure: isProduction, // Use secure cookies in production
+      sameSite: isProduction ? "none" : "lax", // Allow cross-site in production
     },
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
