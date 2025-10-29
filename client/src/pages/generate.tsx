@@ -91,6 +91,26 @@ export default function Generate() {
       setTimeout(() => {
         generateMutation.mutate();
       }, 1000);
+    } else if (accounts !== undefined && budget === undefined && preferences !== undefined) {
+      // Budget is missing - show error
+      toast({
+        title: "Budget Required",
+        description: "Please set your monthly budget before generating a plan.",
+        variant: "destructive",
+      });
+      setTimeout(() => {
+        setLocation("/budget");
+      }, 2000);
+    } else if (accounts !== undefined && preferences === undefined) {
+      // Preferences missing
+      toast({
+        title: "Preferences Required",
+        description: "Please set your preferences before generating a plan.",
+        variant: "destructive",
+      });
+      setTimeout(() => {
+        setLocation("/preferences");
+      }, 2000);
     }
   }, [accounts, budget, preferences]);
 
