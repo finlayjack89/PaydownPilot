@@ -27,18 +27,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Check for guest mode first
       const guestMode = localStorage.getItem("guestMode");
       if (guestMode === "true") {
-        const guestUser: User = {
-          id: "guest-user",
-          email: "guest@example.com",
-          name: "Guest User",
-          country: "US",
-          region: null,
-          currency: "USD",
-          createdAt: new Date(),
-        };
-        setUser(guestUser);
-        setIsLoading(false);
-        return;
+        // Re-establish guest session with server
+        const guestResponse = await fetch("/api/auth/guest", {
+          method: "POST",
+          credentials: "include",
+        });
+        
+        if (guestResponse.ok) {
+          const userData = await guestResponse.json();
+          setUser(userData);
+          setIsLoading(false);
+          return;
+        } else {
+          // If guest login fails, clear guest mode and fall through to normal auth check
+          localStorage.removeItem("guestMode");
+        }
       }
 
       const response = await fetch("/api/auth/me", {
