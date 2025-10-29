@@ -6,7 +6,7 @@ import { setupAuth, requireAuth, hashPassword } from "./auth";
 import { discoverLenderRule, generatePlanExplanation } from "./anthropic";
 import { 
   insertUserSchema, insertAccountSchema, insertBudgetSchema, 
-  insertPreferenceSchema, type InsertAccount
+  insertPreferenceSchema, type InsertAccount, type InsertBudget
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -114,13 +114,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/accounts", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const validatedData = insertAccountSchema.omit({ userId: true, id: true }).parse(req.body);
+      const validatedData = insertAccountSchema.parse(req.body);
       
       const account = await storage.createAccount({
         ...validatedData,
-        id: randomUUID(),
         userId,
-      } as InsertAccount);
+      });
 
       res.json(account);
     } catch (error: any) {
@@ -181,13 +180,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/budget", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const validatedData = insertBudgetSchema.omit({ userId: true, id: true }).parse(req.body);
+      const validatedData = insertBudgetSchema.parse(req.body);
       
       const budget = await storage.createOrUpdateBudget({
         ...validatedData,
-        id: randomUUID(),
         userId,
-      });
+      } as InsertBudget);
 
       res.json(budget);
     } catch (error: any) {
@@ -212,11 +210,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/preferences", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const validatedData = insertPreferenceSchema.omit({ userId: true, id: true }).parse(req.body);
+      const validatedData = insertPreferenceSchema.parse(req.body);
       
       const prefs = await storage.createOrUpdatePreferences({
         ...validatedData,
-        id: randomUUID(),
         userId,
       });
 
@@ -250,11 +247,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lenderName: result.lenderName,
         country,
         ruleDescription: result.ruleDescription,
-        minPaymentRuleFixedCents: result.minPaymentRule.fixedCents,
-        minPaymentRulePercentageBps: result.minPaymentRule.percentageBps,
-        minPaymentRuleIncludesInterest: result.minPaymentRule.includesInterest,
-        confidence: result.confidence,
-        source: "AI",
+        fixedCents: result.minPaymentRule.fixedCents,
+        percentageBps: result.minPaymentRule.percentageBps,
+        includesInterest: result.minPaymentRule.includesInterest,
       });
 
       res.json(rule);
