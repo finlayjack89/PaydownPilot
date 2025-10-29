@@ -175,31 +175,73 @@ The Python FastAPI backend (`main.py`, `solver_engine.py`, `schemas.py`) runs au
 **Deployment:**
 Both Node and Python backends run together in production. The Node server manages the Python process lifecycle (start/stop/restart).
 
-## Recent Updates (October 28, 2025)
+## Recent Updates
 
-✅ **Core MVP Complete - All Features Working End-to-End:**
+### October 29, 2025 - Authentication System Overhaul ✅
 
-1. **Python OR-Tools Integration** - Integrated Python FastAPI backend that auto-starts with Node server, successfully generating OPTIMAL debt paydown plans using Google OR-Tools CP-SAT solver
+**Fixed Critical Cross-Tab Authentication Issues:**
+
+The app now properly handles authentication when opened in new browser tabs or external windows. Previously, users would experience:
+- Auto-bypass of login page in new tabs
+- 401 authentication errors when adding accounts
+- Session cookies not persisting across tabs
+
+**Changes Implemented:**
+
+1. **Removed localStorage Auto-Login** (`client/src/lib/auth-context.tsx`)
+   - Previously: App created local guest user from localStorage without server validation
+   - Now: Only relies on server-side session checks via GET /api/auth/me
+   - Clears stale localStorage flags when session validation fails
+
+2. **Fixed Default Route Logic** (`client/src/App.tsx`)
+   - Previously: Always redirected to /dashboard (even for unauthenticated users)
+   - Now: Checks authentication state and routes accordingly:
+     - Unauthenticated → /login
+     - Authenticated → /dashboard
+   - Added loading state during authentication check
+
+3. **Environment-Aware Session Cookie Configuration** (`server/auth.ts`)
+   - Development: `secure: false`, `sameSite: "lax"` (works with Replit's non-HTTPS)
+   - Production: `secure: true`, `sameSite: "none"` (requires HTTPS, prevents CSRF)
+   - Both environments: `httpOnly: true` (prevents XSS attacks)
+   - Added `trust proxy` configuration for Replit's proxy setup
+
+4. **Fixed Account Form Validation** (`client/src/components/add-account-dialog.tsx`)
+   - Added minimum payment fields to button disabled logic
+   - Prevents submission when required fields are empty
+
+**Test Results:**
+- ✅ New browser tabs correctly show login page
+- ✅ Guest mode establishes proper server sessions
+- ✅ Session cookies persist across all API calls
+- ✅ Account creation succeeds without 401 errors
+- ✅ Budget operations work correctly
+- ✅ End-to-end authentication flow fully functional
+
+**Security Improvements:**
+- Environment-based secure cookie flags
+- HttpOnly cookies prevent XSS attacks
+- SameSite protection against CSRF
+- Server-side session validation on all protected routes
+- No sensitive data stored in client-side storage
+
+### October 28, 2025 - Core MVP Complete ✅
+
+**Full-Stack Debt Optimization System Working End-to-End:**
+
+1. **Python OR-Tools Integration** - Python FastAPI backend auto-starts with Node server, generating OPTIMAL debt paydown plans using Google OR-Tools CP-SAT solver
 
 2. **AI Lender Rule Discovery** - Claude Sonnet 4 integration for automatic minimum payment rule research with human-in-the-loop confirmation
 
-3. **Future Budget Changes & Lump Sum Payments** - UI for managing future budget adjustments and one-time payments with validation and targeting
+3. **Future Budget Changes & Lump Sum Payments** - UI for managing future budget adjustments and one-time payments with validation
 
-4. **Full Stack Integration** - Complete data flow from frontend → Node API → Python solver → AI explanation → Database → Dashboard visualization
-
-**Test Results:**
-- End-to-end test passed: User registration → Account creation → Budget/Preferences → Plan generation → Dashboard display
-- Verified metrics: $3,000 debt paid in 10 months with $281.60 total interest
-- All constraints satisfied: minimum payments, budget limits, date sequencing
+4. **Full Stack Integration** - Complete data flow: Frontend → Node API → Python solver → AI explanation → Database → Dashboard visualization
 
 **Technical Fixes:**
-- Fixed plan_start_date database constraint (now defaults to current date)
-- Fixed SelectItem empty value bug (using "__ANY__" sentinel)
-- Improved error logging for Python backend communication
-- Schema transformation working correctly between TypeScript and Python
-
-**Ready for Deployment:**
-Application is fully functional and tested. All core features operational.
+- Fixed critical solver objectives (MINIMIZE_TOTAL_INTEREST, TARGET_MAX_BUDGET)
+- Resolved TypeScript compilation errors in server routes
+- Fixed plan_start_date database constraint
+- Schema transformation between TypeScript and Python working correctly
 
 ## Known Limitations
 
