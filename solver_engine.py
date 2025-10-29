@@ -448,17 +448,17 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
 
     if strategy == OptimizationStrategy.MINIMIZE_TOTAL_INTEREST:
         # Goal: minimize total interest paid
-        # With LINEAR_PER_ACCOUNT, we also add a secondary objective to maximize budget usage
-        # This prevents the solver from getting stuck at minimum payments
-        if portfolio.preferences.payment_shape == PaymentShape.LINEAR_PER_ACCOUNT:
-            all_payment_variables: List[cp_model.IntVar] = list(payments.values())
-            total_payments = sum(all_payment_variables)
-            # Weight interest very high (100x) to prioritize it, but encourage budget usage
-            model.Minimize(total_interest_cost * 100 - total_payments)
-            print(f"Objective set to: {strategy.value} (with LINEAR shape: minimizing interest + maximizing budget usage)")
-        else:
-            model.Minimize(total_interest_cost)
-            print(f"Objective set to: {strategy.value}")
+        # Add secondary objective: minimize sum of all balances across all months
+        # This incentivizes paying down debt faster (lower balances = better)
+        all_balance_variables: List[cp_model.IntVar] = list(balances.values())
+        total_balances_over_time = sum(all_balance_variables)
+        
+        # Primary: minimize interest (weight 100x), Secondary: minimize balances
+        # Balances are in cents, so a $5000 balance is 500,000. Over 100 months that's 50M.
+        # Interest might be $500 = 50,000 cents. Weight 100x = 5,000,000.
+        # This ensures interest is primary but balances provide tie-breaking
+        model.Minimize(total_interest_cost * 100 + total_balances_over_time)
+        print(f"Objective set to: {strategy.value} (minimize interest + minimize time with debt)")
     
     elif strategy == OptimizationStrategy.TARGET_MAX_BUDGET:
         # Goal: Pay off debt as fast as possible by maximizing payments
