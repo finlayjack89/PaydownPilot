@@ -11,7 +11,7 @@ import { Loader2 } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { login } = useAuth();
+  const { login, continueAsGuest } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,6 +32,19 @@ export default function Login() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGuestMode = async () => {
+    try {
+      await continueAsGuest();
+      setLocation("/accounts");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to start guest mode",
+        variant: "destructive",
+      });
     }
   };
 
@@ -93,6 +106,15 @@ export default function Login() {
             >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign in
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-12 text-base font-semibold"
+              onClick={handleGuestMode}
+              data-testid="button-guest"
+            >
+              Continue as Guest
             </Button>
             <div className="text-center text-sm text-muted-foreground">
               Don't have an account?{" "}

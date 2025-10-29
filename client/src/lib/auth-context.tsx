@@ -6,6 +6,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, fullName: string, country: string, currency: string) => Promise<void>;
+  continueAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
 }
@@ -23,6 +24,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
+      // Check for guest mode first
+      const guestMode = localStorage.getItem("guestMode");
+      if (guestMode === "true") {
+        const guestUser: User = {
+          id: "guest-user",
+          email: "guest@example.com",
+          name: "Guest User",
+          country: "US",
+          region: null,
+          currency: "USD",
+          createdAt: new Date(),
+        };
+        setUser(guestUser);
+        setIsLoading(false);
+        return;
+      }
+
       const response = await fetch("/api/auth/me", {
         credentials: "include",
       });
@@ -71,7 +89,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(userData);
   };
 
+  const continueAsGuest = async () => {
+    localStorage.setItem("guestMode", "true");
+    const guestUser: User = {
+      id: "guest-user",
+      email: "guest@example.com",
+      name: "Guest User",
+      country: "US",
+      region: null,
+      currency: "USD",
+      createdAt: new Date(),
+    };
+    setUser(guestUser);
+  };
+
   const logout = async () => {
+    localStorage.removeItem("guestMode");
     await fetch("/api/auth/logout", {
       method: "POST",
       credentials: "include",
@@ -84,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, signup, continueAsGuest, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
