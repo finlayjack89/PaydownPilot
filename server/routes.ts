@@ -10,6 +10,35 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
+// Helper function to retry fetch requests with exponential backoff
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries: number = 3,
+  initialDelayMs: number = 500
+): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      return response; // Success - return response (even if not ok, let caller handle)
+    } catch (error: any) {
+      lastError = error;
+      
+      // Don't retry if this is the last attempt
+      if (attempt < maxRetries - 1) {
+        const delayMs = initialDelayMs * Math.pow(2, attempt);
+        console.log(`[Retry] Attempt ${attempt + 1} failed, retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  
+  // All retries exhausted
+  throw lastError || new Error("Max retries exceeded");
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
@@ -309,25 +338,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         plan_start_date: planStartDate || new Date().toISOString().split('T')[0],
       };
 
-      // Call Python FastAPI backend
+      // Call Python FastAPI backend with retry logic
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || "http://127.0.0.1:8000";
       console.log(`[Plan Generation] Calling Python backend at ${pythonBackendUrl}/generate-plan`);
       
       let pythonResponse;
       try {
-        pythonResponse = await fetch(`${pythonBackendUrl}/generate-plan`, {
+        pythonResponse = await fetchWithRetry(`${pythonBackendUrl}/generate-plan`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(portfolioInput),
-        });
+        }, 3, 500); // 3 retries with 500ms initial delay (exponential backoff)
       } catch (fetchError: any) {
-        console.error("[Plan Generation] Failed to reach Python backend:", {
+        console.error("[Plan Generation] Failed to reach Python backend after retries:", {
           url: `${pythonBackendUrl}/generate-plan`,
           error: fetchError.message,
+          errorType: fetchError.code || fetchError.name,
           stack: fetchError.stack
         });
+        
+        // Provide more helpful error messages based on error type
+        let userMessage = "Could not connect to optimization engine.";
+        if (fetchError.code === "ECONNREFUSED") {
+          userMessage = "Optimization engine is not available. It may be starting up or experiencing issues.";
+        } else if (fetchError.code === "ETIMEDOUT") {
+          userMessage = "Connection to optimization engine timed out. Please try again.";
+        } else if (fetchError.name === "AbortError") {
+          userMessage = "Request to optimization engine was aborted. Please try again.";
+        }
+        
         return res.status(500).send({ 
-          message: "Could not connect to optimization engine. Please try again.",
+          message: userMessage,
           status: "ERROR"
         });
       }

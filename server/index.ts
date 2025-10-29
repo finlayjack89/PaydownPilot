@@ -5,9 +5,46 @@ import { spawn } from "child_process";
 
 const app = express();
 
+// Helper function to check if Python backend is ready
+async function waitForPythonBackend(
+  url: string,
+  maxAttempts: number = 30,
+  delayMs: number = 1000
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(`${url}/health`);
+      if (response.ok) {
+        const data = await response.json();
+        log(`Python backend is ready: ${JSON.stringify(data)}`);
+        return true;
+      }
+    } catch (error) {
+      // Python not ready yet, continue polling
+      if (attempt === 1) {
+        log(`Waiting for Python backend to be ready...`);
+      }
+    }
+    
+    // Wait before next attempt
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+  
+  return false;
+}
+
 // Start Python FastAPI backend in development mode
 let pythonProcess: any = null;
-if (process.env.NODE_ENV === "development") {
+let pythonRestartCount = 0;
+const MAX_PYTHON_RESTARTS = 5;
+let shouldRestartPython = true;
+
+function startPythonBackend() {
+  if (pythonRestartCount >= MAX_PYTHON_RESTARTS) {
+    console.error(`[Python] Max restart attempts (${MAX_PYTHON_RESTARTS}) exceeded. Not restarting.`);
+    return;
+  }
+
   log("Starting Python FastAPI backend on port 8000...");
   pythonProcess = spawn("uvicorn", ["main:app", "--host", "127.0.0.1", "--port", "8000", "--reload"], {
     cwd: process.cwd(),
@@ -19,27 +56,52 @@ if (process.env.NODE_ENV === "development") {
   });
 
   pythonProcess.stderr?.on("data", (data: Buffer) => {
-    console.error(`[Python] ${data.toString().trim()}`);
+    const message = data.toString().trim();
+    console.error(`[Python] ${message}`);
+    
+    // Check for critical errors that indicate the process won't recover
+    if (message.includes("Address already in use") || 
+        message.includes("Cannot bind to port")) {
+      console.error("[Python] Critical error detected. Port 8000 may be in use.");
+      shouldRestartPython = false;
+    }
   });
 
   pythonProcess.on("error", (error: Error) => {
     console.error("[Python] Failed to start:", error.message);
   });
 
-  pythonProcess.on("exit", (code: number) => {
-    if (code !== 0) {
-      console.error(`[Python] Exited with code ${code}`);
+  pythonProcess.on("exit", (code: number, signal: string) => {
+    if (code !== 0 && code !== null) {
+      console.error(`[Python] Exited unexpectedly with code ${code}`);
+      
+      // Auto-restart if we should and haven't exceeded max restarts
+      if (shouldRestartPython && pythonRestartCount < MAX_PYTHON_RESTARTS) {
+        pythonRestartCount++;
+        console.log(`[Python] Attempting restart ${pythonRestartCount}/${MAX_PYTHON_RESTARTS} in 2 seconds...`);
+        setTimeout(() => {
+          startPythonBackend();
+        }, 2000);
+      }
+    } else if (signal) {
+      console.log(`[Python] Terminated by signal ${signal}`);
     }
   });
+}
+
+if (process.env.NODE_ENV === "development") {
+  startPythonBackend();
 
   // Cleanup Python process on exit
   process.on("exit", () => {
+    shouldRestartPython = false; // Prevent restart during shutdown
     if (pythonProcess) {
       pythonProcess.kill();
     }
   });
 
   process.on("SIGINT", () => {
+    shouldRestartPython = false; // Prevent restart during shutdown
     if (pythonProcess) {
       pythonProcess.kill();
     }
@@ -99,6 +161,17 @@ app.use((req, res, next) => {
     res.status(status).json({ message });
     throw err;
   });
+
+  // Wait for Python backend to be ready in development mode
+  if (process.env.NODE_ENV === "development") {
+    const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || "http://127.0.0.1:8000";
+    const pythonReady = await waitForPythonBackend(pythonBackendUrl);
+    
+    if (!pythonReady) {
+      console.error(`[Python] Failed to start within 30 seconds. Plan generation will not work.`);
+      console.error(`[Python] Check Python logs above for errors.`);
+    }
+  }
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route

@@ -36,6 +36,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# --- Health Check Endpoint ---
+@app.get("/health")
+async def health_check():
+    """
+    Simple health check endpoint to verify the service is running.
+    Returns 200 OK when the server is ready to accept requests.
+    """
+    return {"status": "healthy", "service": "paydown-pilot-optimization-engine"}
+
 # --- Helper Function for Data Conversion ---
 def convert_schema_to_solver_portfolio(
     portfolio_schema: schemas.DebtPortfolio
