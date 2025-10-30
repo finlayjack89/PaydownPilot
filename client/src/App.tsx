@@ -1,10 +1,13 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Signup from "@/pages/signup";
@@ -14,6 +17,7 @@ import Budget from "@/pages/budget";
 import Preferences from "@/pages/preferences";
 import Generate from "@/pages/generate";
 import Dashboard from "@/pages/dashboard";
+import { type ReactNode } from "react";
 
 function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
   const { user, isLoading } = useAuth();
@@ -57,14 +61,45 @@ function Router() {
   );
 }
 
+function AppLayout({ children }: { children: ReactNode }) {
+  const { user, isLoading } = useAuth();
+  const [location] = useLocation();
+  
+  // Show sidebar for authenticated users, except on login, signup, and onboarding pages
+  const showSidebar = user && !isLoading && !['/login', '/signup', '/onboarding'].includes(location);
+  
+  if (!showSidebar) {
+    return <>{children}</>;
+  }
+  
+  return (
+    <div className="flex h-screen w-full">
+      <AppSidebar />
+      <div className="flex flex-col flex-1">
+        <header className="flex items-center justify-between p-2 border-b">
+          <SidebarTrigger data-testid="button-sidebar-toggle" />
+          <ThemeToggle />
+        </header>
+        <main className="flex-1 overflow-auto">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
           <TooltipProvider>
+            <SidebarProvider>
+              <AppLayout>
+                <Router />
+              </AppLayout>
+            </SidebarProvider>
             <Toaster />
-            <Router />
           </TooltipProvider>
         </AuthProvider>
       </ThemeProvider>
