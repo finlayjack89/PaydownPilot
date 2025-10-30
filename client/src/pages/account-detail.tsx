@@ -1,32 +1,125 @@
-import { useRoute } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useRoute, Link, useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CreditCard, Calendar, DollarSign, TrendingUp } from "lucide-react";
-import { Link } from "wouter";
-import { formatCurrency } from "@/lib/format";
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle 
+} from "@/components/ui/alert-dialog";
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from "@/components/ui/table";
+import { 
+  ArrowLeft, 
+  CreditCard, 
+  ShoppingBag, 
+  Banknote, 
+  Calendar, 
+  DollarSign, 
+  TrendingUp, 
+  Edit2, 
+  Trash2 
+} from "lucide-react";
+import { formatCurrency, formatDate, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
+import { useActivePlan } from "@/hooks/use-plan-data";
+import { AddAccountDialog } from "@/components/add-account-dialog";
 import { AccountTimeline } from "@/components/account-timeline";
+import type { Account } from "@shared/schema";
+import { AccountType } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AccountDetail() {
+  const [, setLocation] = useLocation();
   const [match, params] = useRoute("/accounts/:id");
   const { user } = useAuth();
+  const { toast } = useToast();
   const accountId = params?.id;
 
-  const { data: account, isLoading } = useQuery({
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  const { data: account, isLoading: isLoadingAccount } = useQuery<Account>({
     queryKey: ["/api/accounts", accountId],
     enabled: !!accountId,
   });
 
-  const { data: plan } = useQuery({
-    queryKey: ["/api/plans/latest"],
+  const { data: plan, isLoading: isLoadingPlan } = useActivePlan();
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("DELETE", `/api/accounts/${accountId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+      toast({
+        title: "Account deleted",
+        description: "Your account has been deleted successfully.",
+      });
+      setLocation("/accounts");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete account. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
-  if (isLoading) {
+  const getAccountIcon = (type: string) => {
+    switch (type) {
+      case AccountType.CREDIT_CARD: return <CreditCard className="h-8 w-8 text-primary" />;
+      case AccountType.BNPL: return <ShoppingBag className="h-8 w-8 text-primary" />;
+      case AccountType.LOAN: return <Banknote className="h-8 w-8 text-primary" />;
+      default: return <CreditCard className="h-8 w-8 text-primary" />;
+    }
+  };
+
+  const getPromoDuration = () => {
+    if (!account) return null;
+    
+    if (account.promoDurationMonths) {
+      return `${account.promoDurationMonths} months`;
+    }
+    
+    if (account.promoEndDate && account.accountOpenDate) {
+      const start = new Date(account.accountOpenDate);
+      const end = new Date(account.promoEndDate);
+      const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+      return `${months} months`;
+    }
+    
+    return null;
+  };
+
+  // Filter plan data to show only this account's schedule
+  const accountSchedule = plan?.plan?.filter(
+    (entry: any) => entry.lenderName === account?.lenderName
+  ) || [];
+
+  const accountInfo = plan?.accountSchedules?.find(
+    (schedule) => schedule.accountId === accountId
+  );
+
+  if (isLoadingAccount) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+        <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" data-testid="loading-spinner" />
       </div>
     );
   }
@@ -54,10 +147,15 @@ export default function AccountDetail() {
     );
   }
 
+  const minPayment = Math.max(
+    (account.minPaymentRuleFixedCents || 0) / 100,
+    (account.currentBalanceCents * (account.minPaymentRulePercentageBps || 0)) / 1000000
+  );
+
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <div className="space-y-6">
-        {/* Header */}
+        {/* Header with Back Button */}
         <div className="flex items-center gap-4">
           <Button variant="ghost" asChild data-testid="button-back">
             <Link href="/accounts">
@@ -67,131 +165,158 @@ export default function AccountDetail() {
           </Button>
         </div>
 
-        {/* Account Header */}
+        {/* Account Header Card */}
         <Card>
           <CardHeader>
-            <div className="flex items-start justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <CreditCard className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-3xl" data-testid="text-account-name">
-                      {account.lenderName}
-                    </CardTitle>
-                    <div className="flex gap-2 mt-1">
-                      <Badge variant="outline" data-testid="badge-account-type">
-                        {account.accountType}
-                      </Badge>
-                    </div>
-                  </div>
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  {getAccountIcon(account.accountType)}
+                </div>
+                <div className="flex-1">
+                  <CardTitle className="text-3xl mb-2" data-testid="text-account-name">
+                    {account.lenderName}
+                  </CardTitle>
+                  <Badge variant="outline" data-testid="badge-account-type">
+                    {account.accountType}
+                  </Badge>
                 </div>
               </div>
-              <Button asChild variant="outline" data-testid="button-edit-account">
-                <Link href="/accounts">Edit Account</Link>
-              </Button>
+              
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsEditDialogOpen(true)}
+                  data-testid="button-edit-account"
+                >
+                  <Edit2 className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  data-testid="button-delete-account"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              </div>
             </div>
           </CardHeader>
+          
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Current Balance</p>
+                <p className="text-3xl font-mono font-bold" data-testid="text-current-balance">
+                  {formatCurrency(account.currentBalanceCents, user?.currency || undefined)}
+                </p>
+              </div>
+              
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Interest Rate</p>
+                <p className="text-3xl font-mono font-bold" data-testid="text-apr">
+                  {(account.aprStandardBps / 100).toFixed(2)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">APR</p>
+              </div>
+              
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Payment Due Day</p>
+                <p className="text-3xl font-mono font-bold" data-testid="text-payment-due-day">
+                  {account.paymentDueDay}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">of each month</p>
+              </div>
+              
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Min Payment</p>
+                <p className="text-3xl font-mono font-bold" data-testid="text-min-payment">
+                  {formatCurrency(Math.round(minPayment * 100), user?.currency || undefined)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">estimated</p>
+              </div>
+            </div>
+          </CardContent>
         </Card>
 
-        {/* Account Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card data-testid="card-current-balance">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Current Balance</CardTitle>
-              <DollarSign className="h-5 w-5 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold font-mono" data-testid="text-current-balance">
-                {formatCurrency(account.currentBalanceCents, user?.currency)}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-apr">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Interest Rate</CardTitle>
-              <TrendingUp className="h-5 w-5 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold font-mono" data-testid="text-apr">
-                {(account.aprStandardBps / 100).toFixed(2)}%
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">APR</p>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-payment-due">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Payment Due Day</CardTitle>
-              <Calendar className="h-5 w-5 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold font-mono" data-testid="text-payment-due-day">
-                Day {account.paymentDueDay}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">of each month</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Account Details */}
+        {/* Account Details Card */}
         <Card>
           <CardHeader>
             <CardTitle>Account Details</CardTitle>
             <CardDescription>Complete information for this account</CardDescription>
           </CardHeader>
           <CardContent>
-            <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <dt className="text-sm font-medium text-muted-foreground">Account Type</dt>
-                <dd className="mt-1 text-sm" data-testid="text-detail-account-type">{account.accountType}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-muted-foreground">Lender</dt>
-                <dd className="mt-1 text-sm" data-testid="text-detail-lender">{account.lenderName}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-muted-foreground">Minimum Payment (Fixed)</dt>
-                <dd className="mt-1 text-sm font-mono" data-testid="text-detail-min-payment-fixed">
-                  {formatCurrency(account.minPaymentRuleFixedCents, user?.currency)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-muted-foreground">Minimum Payment (Percentage)</dt>
-                <dd className="mt-1 text-sm font-mono" data-testid="text-detail-min-payment-percentage">
-                  {(account.minPaymentRulePercentageBps / 100).toFixed(2)}%
-                </dd>
-              </div>
+            <dl className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {account.accountOpenDate && (
                 <div>
                   <dt className="text-sm font-medium text-muted-foreground">Account Opened</dt>
-                  <dd className="mt-1 text-sm" data-testid="text-detail-open-date">
-                    {new Date(account.accountOpenDate).toLocaleDateString()}
+                  <dd className="mt-1 text-base" data-testid="text-detail-open-date">
+                    {formatDate(account.accountOpenDate)}
                   </dd>
                 </div>
               )}
+              
               {account.promoEndDate && (
                 <div>
                   <dt className="text-sm font-medium text-muted-foreground">Promo End Date</dt>
-                  <dd className="mt-1 text-sm" data-testid="text-detail-promo-end">
-                    {new Date(account.promoEndDate).toLocaleDateString()}
+                  <dd className="mt-1 text-base" data-testid="text-detail-promo-end">
+                    {formatDate(account.promoEndDate)}
+                  </dd>
+                </div>
+              )}
+              
+              {getPromoDuration() && (
+                <div>
+                  <dt className="text-sm font-medium text-muted-foreground">Promo Duration</dt>
+                  <dd className="mt-1 text-base" data-testid="text-detail-promo-duration">
+                    {getPromoDuration()}
+                  </dd>
+                </div>
+              )}
+              
+              <div>
+                <dt className="text-sm font-medium text-muted-foreground">Min Payment (Fixed)</dt>
+                <dd className="mt-1 text-base font-mono" data-testid="text-detail-min-payment-fixed">
+                  {formatCurrency(account.minPaymentRuleFixedCents || 0, user?.currency || undefined)}
+                </dd>
+              </div>
+              
+              <div>
+                <dt className="text-sm font-medium text-muted-foreground">Min Payment (Percentage)</dt>
+                <dd className="mt-1 text-base font-mono" data-testid="text-detail-min-payment-percentage">
+                  {((account.minPaymentRulePercentageBps || 0) / 100).toFixed(2)}%
+                </dd>
+              </div>
+              
+              <div>
+                <dt className="text-sm font-medium text-muted-foreground">Includes Interest in Min Payment</dt>
+                <dd className="mt-1 text-base" data-testid="text-detail-includes-interest">
+                  {account.minPaymentRuleIncludesInterest ? "Yes" : "No"}
+                </dd>
+              </div>
+              
+              {accountInfo && (
+                <div>
+                  <dt className="text-sm font-medium text-muted-foreground">Projected Payoff Time</dt>
+                  <dd className="mt-1 text-base" data-testid="text-detail-payoff-months">
+                    {accountInfo.payoffTimeMonths} months
                   </dd>
                 </div>
               )}
             </dl>
+            
             {account.notes && (
               <div className="mt-6 pt-6 border-t">
                 <dt className="text-sm font-medium text-muted-foreground mb-2">Notes</dt>
-                <dd className="text-sm" data-testid="text-detail-notes">{account.notes}</dd>
+                <dd className="text-base" data-testid="text-detail-notes">{account.notes}</dd>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Payment Timeline */}
-        {plan && (
+        {/* Payment Timeline Visualization */}
+        {plan && accountSchedule.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Payment Timeline</CardTitle>
@@ -201,14 +326,121 @@ export default function AccountDetail() {
             </CardHeader>
             <CardContent>
               <AccountTimeline 
-                data={plan.planData || []} 
+                data={accountSchedule} 
                 currency={user?.currency || "USD"}
                 accountName={account.lenderName}
               />
             </CardContent>
           </Card>
         )}
+
+        {/* Payment Schedule Table */}
+        {plan && accountSchedule.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Payment Schedule</CardTitle>
+              <CardDescription>
+                Month-by-month breakdown of payments, interest, and balance
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-24">Month</TableHead>
+                      <TableHead className="text-right">Payment</TableHead>
+                      <TableHead className="text-right">Interest</TableHead>
+                      <TableHead className="text-right">Principal</TableHead>
+                      <TableHead className="text-right">Remaining Balance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {accountSchedule.map((entry: any) => {
+                      const principal = entry.paymentCents - entry.interestChargedCents;
+                      const startDate = plan.planStartDate ? new Date(plan.planStartDate) : new Date();
+                      
+                      return (
+                        <TableRow key={entry.month} data-testid={`row-month-${entry.month}`}>
+                          <TableCell className="font-medium" data-testid={`text-month-${entry.month}`}>
+                            {formatMonthYear(entry.month - 1, startDate)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono" data-testid={`text-payment-${entry.month}`}>
+                            {formatCurrency(entry.paymentCents, user?.currency || undefined)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono" data-testid={`text-interest-${entry.month}`}>
+                            {formatCurrency(entry.interestChargedCents, user?.currency || undefined)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono" data-testid={`text-principal-${entry.month}`}>
+                            {formatCurrency(principal, user?.currency || undefined)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono" data-testid={`text-balance-${entry.month}`}>
+                            {formatCurrency(entry.endingBalanceCents, user?.currency || undefined)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* No Plan State */}
+        {!isLoadingPlan && !plan && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Payment Timeline</CardTitle>
+              <CardDescription>
+                Generate a plan to see your payment timeline
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center py-8">
+              <p className="text-muted-foreground mb-4" data-testid="text-no-plan">
+                You haven't generated a payment plan yet. Create a plan to see the month-by-month payment schedule for this account.
+              </p>
+              <Button asChild data-testid="button-generate-plan">
+                <Link href="/budget">
+                  Generate Plan
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Edit Account Dialog */}
+      <AddAccountDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        account={account}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent data-testid="dialog-delete-confirmation">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{account.lenderName}"? This action cannot be undone.
+              Any plans associated with this account will need to be regenerated.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete Account"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
