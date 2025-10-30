@@ -159,10 +159,28 @@ export interface PlanRequest {
   planStartDate?: string;
 }
 
+export interface PlanScheduleEntry {
+  month: number;
+  startingBalanceCents: number;
+  totalPaymentCents: number;
+  payments: Record<string, number>;
+}
+
+export interface AccountSchedule {
+  accountId: string;
+  lenderName: string;
+  payoffTimeMonths: number;
+}
+
 export interface PlanResponse {
   status: string;
   message?: string;
   plan?: MonthlyResult[];
+  planStartDate?: string;
+  payoffTimeMonths?: number;
+  totalInterestPaidCents?: number;
+  schedule?: PlanScheduleEntry[];
+  accountSchedules?: AccountSchedule[];
 }
 
 export interface LenderRuleDiscoveryRequest {

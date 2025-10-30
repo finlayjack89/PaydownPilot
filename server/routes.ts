@@ -9,6 +9,7 @@ import {
   insertPreferenceSchema, type InsertAccount, type InsertBudget
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { buildStructuredPlan } from "./plan-transformer";
 
 // Helper function to retry fetch requests with exponential backoff
 async function fetchWithRetry(
@@ -529,18 +530,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accounts.length
       );
 
+      // Fetch actual accounts from database to get Account[] objects with IDs
+      const dbAccounts = await storage.getAccountsByUserId(userId);
+      
+      // Build structured plan data for dashboard
+      const startDate = planStartDate || new Date().toISOString().split('T')[0];
+      const structuredPlan = buildStructuredPlan(planData, dbAccounts, startDate);
+      
+      console.log('[Plan Generation] Structured plan data:', JSON.stringify({
+        payoffTimeMonths: structuredPlan.payoffTimeMonths,
+        totalInterestPaidCents: structuredPlan.totalInterestPaidCents,
+        scheduleEntries: structuredPlan.schedule.length,
+        accountSchedules: structuredPlan.accountSchedules.length
+      }, null, 2));
+
       // Save plan
       const plan = await storage.createPlan({
         id: randomUUID(),
         userId,
-        planStartDate: planStartDate || new Date().toISOString().split('T')[0],
+        planStartDate: startDate,
         planData,
         status,
         explanation,
         createdAt: new Date(),
       });
 
-      res.json(plan);
+      // Return enriched plan response with structured data
+      res.json({
+        ...plan,
+        ...structuredPlan,
+        plan: planData,
+      });
     } catch (error: any) {
       console.error("Plan generation error:", error);
       res.status(500).send({ message: error.message || "Failed to generate plan" });
