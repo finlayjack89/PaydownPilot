@@ -57,8 +57,8 @@ export default function Signup() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-screen w-full items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md mx-auto">
         <CardHeader className="space-y-4">
           <div className="flex justify-center">
             <Logo />
