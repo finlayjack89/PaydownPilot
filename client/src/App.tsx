@@ -16,7 +16,9 @@ import Accounts from "@/pages/accounts";
 import Budget from "@/pages/budget";
 import Preferences from "@/pages/preferences";
 import Generate from "@/pages/generate";
-import Dashboard from "@/pages/dashboard";
+import HomePageWrapper from "@/pages/home-wrapper";
+import PlanOverview from "@/pages/plan-overview";
+import AccountDetail from "@/pages/account-detail";
 import { type ReactNode } from "react";
 
 function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
@@ -46,16 +48,18 @@ function Router() {
             </div>
           );
         }
-        return user ? <Redirect to="/dashboard" /> : <Redirect to="/login" />;
+        return user ? <ProtectedRoute component={HomePageWrapper} /> : <Redirect to="/login" />;
       }} />
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
       <Route path="/accounts" component={() => <ProtectedRoute component={Accounts} />} />
+      <Route path="/accounts/:id" component={() => <ProtectedRoute component={AccountDetail} />} />
       <Route path="/budget" component={() => <ProtectedRoute component={Budget} />} />
       <Route path="/preferences" component={() => <ProtectedRoute component={Preferences} />} />
       <Route path="/generate" component={() => <ProtectedRoute component={Generate} />} />
-      <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
+      <Route path="/plan" component={() => <ProtectedRoute component={PlanOverview} />} />
+      <Route path="/dashboard" component={() => <Redirect to="/" />} />
       <Route component={NotFound} />
     </Switch>
   );
