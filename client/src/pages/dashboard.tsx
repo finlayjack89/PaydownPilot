@@ -1,15 +1,18 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard } from "lucide-react";
+import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
 import { DebtTimeline } from "@/components/debt-timeline";
+import { AccountTimeline } from "@/components/account-timeline";
 import type { MonthlyResult } from "@shared/schema";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface PlanSummary {
   totalDebt: number;
@@ -21,6 +24,7 @@ interface PlanSummary {
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  const [scheduleView, setScheduleView] = useState<"by-month" | "by-account">("by-month");
 
   const { data: plan, isLoading, isError, refetch } = useQuery({
     queryKey: ["/api/plans/latest"],
@@ -190,7 +194,7 @@ export default function Dashboard() {
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Monthly Budget
               </CardTitle>
-              <DollarSign className="h-5 w-5 text-muted-foreground" />
+              <Wallet className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-mono font-bold">
@@ -235,74 +239,172 @@ export default function Dashboard() {
           <TabsContent value="schedule" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Month-by-Month Payment Schedule</CardTitle>
-                <CardDescription>
-                  Your optimized payment plan for the next {summary.payoffMonths} months
-                </CardDescription>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <CardTitle>Payment Schedule</CardTitle>
+                    <CardDescription>
+                      Your optimized payment plan for the next {summary.payoffMonths} months
+                    </CardDescription>
+                  </div>
+                  <Select value={scheduleView} onValueChange={(v) => setScheduleView(v as "by-month" | "by-account")}>
+                    <SelectTrigger className="w-40" data-testid="select-schedule-view">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="by-month" data-testid="option-by-month">
+                        <div className="flex items-center gap-2">
+                          <LayoutGrid className="h-4 w-4" />
+                          By Month
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="by-account" data-testid="option-by-account">
+                        <div className="flex items-center gap-2">
+                          <LayoutList className="h-4 w-4" />
+                          By Account
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-3 px-4 font-medium">Month</th>
-                        <th className="text-left py-3 px-4 font-medium">Account</th>
-                        <th className="text-right py-3 px-4 font-medium">Payment</th>
-                        <th className="text-right py-3 px-4 font-medium">Interest</th>
-                        <th className="text-right py-3 px-4 font-medium">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {planData?.slice(0, 36).map((row, idx) => (
-                        <tr
-                          key={idx}
-                          className="border-b hover:bg-muted/50"
-                          data-testid={`row-payment-${idx}`}
-                        >
-                          <td className="py-3 px-4 font-mono">
-                            {formatMonthYear(row.month - 1, new Date())}
-                          </td>
-                          <td className="py-3 px-4">{row.lenderName}</td>
-                          <td className="py-3 px-4 text-right font-mono font-semibold">
-                            {formatCurrency(row.paymentCents, user?.currency)}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono text-muted-foreground">
-                            {formatCurrency(row.interestChargedCents, user?.currency)}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono font-semibold">
-                            {formatCurrency(Math.max(0, row.endingBalanceCents), user?.currency)}
-                          </td>
+                {scheduleView === "by-month" ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-3 px-4 font-medium">Month</th>
+                          <th className="text-left py-3 px-4 font-medium">Account</th>
+                          <th className="text-left py-3 px-4 font-medium">Due Date</th>
+                          <th className="text-right py-3 px-4 font-medium">Payment</th>
+                          <th className="text-right py-3 px-4 font-medium">Interest</th>
+                          <th className="text-right py-3 px-4 font-medium">Balance</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {planData && planData.length > 36 && (
-                    <p className="text-center text-sm text-muted-foreground mt-4">
-                      Showing first 36 months of {summary.payoffMonths} total months
-                    </p>
-                  )}
-                </div>
+                      </thead>
+                      <tbody>
+                        {planData?.slice(0, 36).map((row, idx) => {
+                          const account = accounts.find((a: any) => a.lenderName === row.lenderName);
+                          const dueDay = account?.paymentDueDay || 1;
+                          const monthDate = new Date();
+                          monthDate.setMonth(monthDate.getMonth() + row.month - 1);
+                          const paymentDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), dueDay);
+                          
+                          return (
+                            <tr
+                              key={idx}
+                              className="border-b hover:bg-muted/50"
+                              data-testid={`row-payment-${idx}`}
+                            >
+                              <td className="py-3 px-4 font-mono">
+                                {formatMonthYear(row.month - 1, new Date())}
+                              </td>
+                              <td className="py-3 px-4">{row.lenderName}</td>
+                              <td className="py-3 px-4 text-muted-foreground">
+                                {paymentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-semibold">
+                                {formatCurrency(row.paymentCents, user?.currency)}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono text-muted-foreground">
+                                {formatCurrency(row.interestChargedCents, user?.currency)}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-semibold">
+                                {formatCurrency(Math.max(0, row.endingBalanceCents), user?.currency)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {planData && planData.length > 36 && (
+                      <p className="text-center text-sm text-muted-foreground mt-4">
+                        Showing first 36 months of {summary.payoffMonths} total months
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {accounts.map((account: any) => {
+                      const accountPayments = planData?.filter(r => r.lenderName === account.lenderName).slice(0, 24) || [];
+                      
+                      return (
+                        <div key={account.id} className="space-y-2">
+                          <h3 className="font-semibold text-lg">{account.lenderName}</h3>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b">
+                                  <th className="text-left py-2 px-3 font-medium">Month</th>
+                                  <th className="text-left py-2 px-3 font-medium">Due Date</th>
+                                  <th className="text-right py-2 px-3 font-medium">Payment</th>
+                                  <th className="text-right py-2 px-3 font-medium">Interest</th>
+                                  <th className="text-right py-2 px-3 font-medium">Balance</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {accountPayments.map((row, idx) => {
+                                  const dueDay = account.paymentDueDay || 1;
+                                  const monthDate = new Date();
+                                  monthDate.setMonth(monthDate.getMonth() + row.month - 1);
+                                  const paymentDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), dueDay);
+                                  
+                                  return (
+                                    <tr
+                                      key={idx}
+                                      className="border-b hover:bg-muted/50"
+                                      data-testid={`row-account-payment-${account.id}-${idx}`}
+                                    >
+                                      <td className="py-2 px-3 font-mono">
+                                        {formatMonthYear(row.month - 1, new Date())}
+                                      </td>
+                                      <td className="py-2 px-3 text-muted-foreground">
+                                        {paymentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                      </td>
+                                      <td className="py-2 px-3 text-right font-mono font-semibold">
+                                        {formatCurrency(row.paymentCents, user?.currency)}
+                                      </td>
+                                      <td className="py-2 px-3 text-right font-mono text-muted-foreground">
+                                        {formatCurrency(row.interestChargedCents, user?.currency)}
+                                      </td>
+                                      <td className="py-2 px-3 text-right font-mono font-semibold">
+                                        {formatCurrency(Math.max(0, row.endingBalanceCents), user?.currency)}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                            {planData && accountPayments.length === 24 && planData.filter(r => r.lenderName === account.lenderName).length > 24 && (
+                              <p className="text-center text-sm text-muted-foreground mt-2">
+                                Showing first 24 months
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="accounts" className="space-y-4">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {accounts.map((account: any) => {
-                const accountPayments = planData?.filter(r => r.lenderName === account.lenderName) || [];
-                const totalPaid = accountPayments.reduce((sum, r) => sum + r.paymentCents, 0);
-                const totalInterest = accountPayments.reduce((sum, r) => sum + r.interestChargedCents, 0);
-                // Find the first month where this account's balance reaches zero
-                const payoffRecord = accountPayments.find(r => r.endingBalanceCents <= 0);
-                const payoffMonth = payoffRecord ? payoffRecord.month : 0;
+          <TabsContent value="accounts" className="space-y-6">
+            {accounts.map((account: any) => {
+              const accountPayments = planData?.filter(r => r.lenderName === account.lenderName) || [];
+              const totalPaid = accountPayments.reduce((sum, r) => sum + r.paymentCents, 0);
+              const totalInterest = accountPayments.reduce((sum, r) => sum + r.interestChargedCents, 0);
+              const payoffRecord = accountPayments.find(r => r.endingBalanceCents <= 0);
+              const payoffMonth = payoffRecord ? payoffRecord.month : 0;
 
-                return (
-                  <Card key={account.id} data-testid={`card-account-detail-${account.id}`}>
-                    <CardHeader>
-                      <CardTitle>{account.lenderName}</CardTitle>
-                      <CardDescription>{account.accountType}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
+              return (
+                <Card key={account.id} data-testid={`card-account-detail-${account.id}`}>
+                  <CardHeader>
+                    <CardTitle>{account.lenderName}</CardTitle>
+                    <CardDescription>{account.accountType}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid gap-4 sm:grid-cols-3">
                       <div>
                         <p className="text-sm text-muted-foreground">Payoff Month</p>
                         <p className="text-lg font-mono font-bold">
@@ -321,11 +423,22 @@ export default function Dashboard() {
                           {formatCurrency(totalInterest, user?.currency)}
                         </p>
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                    </div>
+                    
+                    {accountPayments.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-3">Balance Reduction Timeline</p>
+                        <AccountTimeline 
+                          data={accountPayments} 
+                          currency={user?.currency || "USD"}
+                          accountName={account.lenderName}
+                        />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </TabsContent>
 
           <TabsContent value="explanation" className="space-y-4">
