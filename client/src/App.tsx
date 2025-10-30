@@ -57,7 +57,16 @@ function Router() {
       <Route path="/accounts/:id" component={() => <ProtectedRoute component={AccountDetail} />} />
       <Route path="/budget" component={() => <ProtectedRoute component={Budget} />} />
       <Route path="/preferences" component={() => <ProtectedRoute component={Preferences} />} />
-      <Route path="/generate" component={() => <ProtectedRoute component={Generate} />} />
+      <Route path="/generate" component={() => {
+        if (isLoading) {
+          return (
+            <div className="flex min-h-screen items-center justify-center" data-testid="loading-generate">
+              <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+            </div>
+          );
+        }
+        return user ? <Generate /> : <Redirect to="/login" />;
+      }} />
       <Route path="/plan" component={() => <ProtectedRoute component={PlanOverview} />} />
       <Route path="/dashboard" component={() => <Redirect to="/" />} />
       <Route component={NotFound} />

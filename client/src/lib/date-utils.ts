@@ -93,11 +93,10 @@ export function getDashboardStats(
   let nextPaymentAccount = "Multiple";
   if (nextPaymentEntry && nextPaymentEntry.payments) {
     let maxPayment = 0;
-    for (const [accountId, payment] of Object.entries(nextPaymentEntry.payments)) {
+    for (const [lenderName, payment] of Object.entries(nextPaymentEntry.payments)) {
       if (payment > maxPayment) {
         maxPayment = payment;
-        const acc = accounts.find((a) => a.id === accountId);
-        nextPaymentAccount = acc?.lenderName ?? "Multiple";
+        nextPaymentAccount = lenderName;
       }
     }
   }

@@ -8,7 +8,7 @@ export default function HomePageWrapper() {
   const { data: plan, isLoading: planLoading } = useActivePlan();
   
   if (accountsLoading || planLoading) {
-    return <div className="flex min-h-screen items-center justify-center">
+    return <div className="flex min-h-screen items-center justify-center" data-testid="loading-home">
       <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
     </div>;
   }
