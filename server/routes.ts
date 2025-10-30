@@ -39,6 +39,44 @@ async function fetchWithRetry(
   throw lastError || new Error("Max retries exceeded");
 }
 
+// Enum mapping functions to translate frontend values to Python backend values
+function mapAccountTypeToPython(frontendValue: string): string {
+  const mapping: Record<string, string> = {
+    "credit_card": "Credit Card",
+    "bnpl": "Buy Now, Pay Later",
+    "loan": "Loan",
+  };
+  if (!mapping[frontendValue]) {
+    throw new Error(`Unknown account type: ${frontendValue}. Expected one of: ${Object.keys(mapping).join(", ")}`);
+  }
+  return mapping[frontendValue];
+}
+
+function mapStrategyToPython(frontendValue: string): string {
+  const mapping: Record<string, string> = {
+    "minimize_interest": "Minimize Total Interest",
+    "minimize_spend": "Minimize Monthly Spend",
+    "maximize_speed": "Pay Off ASAP with Max Budget",
+    "promo_windows": "Pay Off Within Promo Windows",
+    "minimize_spend_to_clear_promos": "Minimize Spend to Clear Promos",
+  };
+  if (!mapping[frontendValue]) {
+    throw new Error(`Unknown strategy: ${frontendValue}. Expected one of: ${Object.keys(mapping).join(", ")}`);
+  }
+  return mapping[frontendValue];
+}
+
+function mapPaymentShapeToPython(frontendValue: string): string {
+  const mapping: Record<string, string> = {
+    "standard": "Linear (Same Amount Per Account)",
+    "optimized": "Optimized (Variable Amounts)",
+  };
+  if (!mapping[frontendValue]) {
+    throw new Error(`Unknown payment shape: ${frontendValue}. Expected one of: ${Object.keys(mapping).join(", ")}`);
+  }
+  return mapping[frontendValue];
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
@@ -297,12 +335,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).send({ message: "Missing required data" });
       }
 
-      // Transform data to match Python FastAPI schema (snake_case)
+      // Transform data to match Python FastAPI schema (snake_case) and map enum values
       const portfolioInput = {
         accounts: accounts.map((acc: any, index: number) => ({
           account_id: `acc_${index}`,
           lender_name: acc.lenderName,
-          account_type: acc.accountType,
+          account_type: mapAccountTypeToPython(acc.accountType),
           current_balance_cents: acc.currentBalanceCents,
           apr_standard_bps: acc.aprStandardBps,
           payment_due_day: acc.paymentDueDay,
@@ -332,8 +370,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ]),
         },
         preferences: {
-          strategy: preferences.strategy,
-          payment_shape: preferences.paymentShape,
+          strategy: mapStrategyToPython(preferences.strategy),
+          payment_shape: mapPaymentShapeToPython(preferences.paymentShape),
         },
         plan_start_date: planStartDate || new Date().toISOString().split('T')[0],
       };

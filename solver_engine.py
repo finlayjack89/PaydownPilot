@@ -373,25 +373,26 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
                 [raw_minimum_payment_var, total_owed_var]
             )
             
-            # 7. Enforce the final minimum payment UNCONDITIONALLY based on previous balance
-            # CRITICAL FIX: Instead of using a boolean gate that can be manipulated,
-            # use a conditional constraint that checks balance directly
+            # 7. Enforce minimum payment using direct mathematical constraints
+            # CRITICAL FIX: Replace boolean gate with unbreakable direct constraints
             # 
-            # The key insight: If previous_balance > 0, payment MUST be >= minimum
-            # If previous_balance == 0, payment MUST be == 0
+            # These two constraints work together to enforce minimum payments:
             # 
-            # We can't directly test "previous_balance > 0" in CP-SAT, so we use:
-            # payment >= (previous_balance > 0 ? final_minimum : 0)
-            # 
-            # Implemented as: Create conditional based on whether any balance exists
-            balance_is_zero = model.NewBoolVar(f'balance_zero_{key}')
-            model.Add(previous_balance_var == 0).OnlyEnforceIf(balance_is_zero)
-            model.Add(previous_balance_var > 0).OnlyEnforceIf(balance_is_zero.Not())
-            
-            # When balance is zero, payment must be zero
-            model.Add(payments[key] == 0).OnlyEnforceIf(balance_is_zero)
-            # When balance is non-zero, payment must meet minimum
-            model.Add(payments[key] >= final_minimum_payment_var).OnlyEnforceIf(balance_is_zero.Not())
+            # Constraint 1: payment >= final_minimum_payment_var
+            #   - When balance > 0: final_minimum = min(raw_min, total_owed) ≈ raw_min
+            #     → payment >= raw_minimum ✓
+            #   - When balance = 0: total_owed = 0, so final_minimum = min(raw_min, 0) = 0
+            #     → payment >= 0 ✓
+            #
+            # Constraint 2: payment <= total_owed_var
+            #   - Prevents overpayment (can't pay more than you owe)
+            #   - When balance = 0: total_owed = 0 → payment <= 0
+            #     Combined with payment >= 0 → payment = 0 ✓
+            #   - When balance > 0: total_owed = balance + interest → payment <= total_owed ✓
+            #
+            # No boolean gates = no opportunity for solver to manipulate the constraints
+            model.Add(payments[key] >= final_minimum_payment_var)
+            model.Add(payments[key] <= total_owed_var)
             
             # 5.2.d. Balance Update (REMAINS AT END)
             # This constraint is also clean: (IntVar == IntVar + IntVar - IntVar)
