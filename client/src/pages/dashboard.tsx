@@ -383,7 +383,16 @@ export default function Dashboard() {
             />
             <div className="flex justify-between items-center text-xs text-muted-foreground">
               <span>Lower Budget</span>
-              <span>Current</span>
+              <button 
+                className="hover:text-foreground transition-colors cursor-pointer"
+                onClick={() => {
+                  setAcceleratorValue(0);
+                  calculateHeuristic(0);
+                }}
+                data-testid="button-center-slider"
+              >
+                Current
+              </button>
               <span>Higher Budget</span>
             </div>
             <div className="flex justify-between items-center pt-2">
