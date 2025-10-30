@@ -35,6 +35,7 @@ export default function Dashboard() {
   const [acceleratorValue, setAcceleratorValue] = useState(0);
   const [heuristicPayoff, setHeuristicPayoff] = useState(0);
   const [heuristicInterest, setHeuristicInterest] = useState(0);
+  const [originalBudget, setOriginalBudget] = useState<number | null>(null);
   
   // AI Assistant state
   const [aiQuestion, setAiQuestion] = useState("");
@@ -161,6 +162,13 @@ export default function Dashboard() {
       setAcceleratorValue(0); // Reset slider when plan updates
     }
   }, [plan?.id, summary.payoffMonths, summary.totalInterest]);
+
+  // Store original budget when first loaded
+  useEffect(() => {
+    if (budget?.monthlyBudgetCents && originalBudget === null) {
+      setOriginalBudget(budget.monthlyBudgetCents);
+    }
+  }, [budget?.monthlyBudgetCents, originalBudget]);
 
   // Simple heuristic calculator for instant feedback
   const calculateHeuristic = (extraCents: number) => {
@@ -350,19 +358,21 @@ export default function Dashboard() {
           <CardHeader>
             <CardTitle>Accelerator</CardTitle>
             <CardDescription>
-              See the impact of paying a little extra each month
+              Explore higher or lower monthly budgets and see the impact
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
               <span className="font-mono text-lg font-semibold">
-                + {formatCurrency(acceleratorValue * 100, user?.currency)}
+                {acceleratorValue >= 0 ? '+ ' : '− '}
+                {formatCurrency(Math.abs(acceleratorValue * 100), user?.currency)}
               </span>
               <span className="text-sm text-muted-foreground">per month</span>
             </div>
             <Slider
               value={[acceleratorValue]}
-              max={500}
+              min={-250}
+              max={250}
               step={25}
               onValueChange={(value) => {
                 const newValue = value[0];
@@ -371,6 +381,11 @@ export default function Dashboard() {
               }}
               data-testid="slider-accelerator"
             />
+            <div className="flex justify-between items-center text-xs text-muted-foreground">
+              <span>Lower Budget</span>
+              <span>Current</span>
+              <span>Higher Budget</span>
+            </div>
             <div className="flex justify-between items-center pt-2">
               <div className="text-sm">
                 <span className="text-muted-foreground">New Payoff: </span>
@@ -379,31 +394,92 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="text-sm">
-                <span className="text-muted-foreground">Est. Saved: </span>
-                <span className="font-semibold text-green-500" data-testid="text-heuristic-savings">
-                  {formatCurrency(Math.max(0, summary.totalInterest - heuristicInterest), user?.currency)}
+                <span className="text-muted-foreground">
+                  {heuristicInterest <= summary.totalInterest ? 'Est. Saved: ' : 'Est. Added: '}
+                </span>
+                <span 
+                  className={`font-semibold ${heuristicInterest <= summary.totalInterest ? 'text-green-500' : 'text-orange-500'}`}
+                  data-testid="text-heuristic-savings"
+                >
+                  {formatCurrency(Math.abs(summary.totalInterest - heuristicInterest), user?.currency)}
                 </span>
               </div>
             </div>
-            <Button 
-              className="w-full"
-              onClick={() => {
-                if (!budget) return;
-                const newBudget = budget.monthlyBudgetCents + (acceleratorValue * 100);
-                reOptimizeMutation.mutate(newBudget);
-              }}
-              disabled={reOptimizeMutation.isPending || acceleratorValue === 0 || !budget || !preferences}
-              data-testid="button-apply-accelerator"
-            >
-              {reOptimizeMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Optimizing...
-                </>
-              ) : (
-                "Apply & Re-Optimize Plan"
-              )}
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                className="flex-1"
+                onClick={() => {
+                  if (!budget) return;
+                  const newBudget = budget.monthlyBudgetCents + (acceleratorValue * 100);
+                  reOptimizeMutation.mutate(newBudget);
+                }}
+                disabled={reOptimizeMutation.isPending || acceleratorValue === 0 || !budget || !preferences}
+                data-testid="button-apply-accelerator"
+              >
+                {reOptimizeMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Optimizing...
+                  </>
+                ) : (
+                  "Apply & Re-Optimize Plan"
+                )}
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={async () => {
+                  if (!originalBudget || !budget) return;
+                  
+                  // Reset to original budget
+                  await apiRequest("PATCH", "/api/budget", {
+                    monthlyBudgetCents: originalBudget,
+                  });
+                  
+                  // Re-generate plan with original budget
+                  const planRequest = {
+                    accounts: accounts.map((acc: any) => ({
+                      lenderName: acc.lenderName,
+                      accountType: acc.accountType,
+                      currentBalanceCents: acc.currentBalanceCents,
+                      aprStandardBps: acc.aprStandardBps,
+                      paymentDueDay: acc.paymentDueDay,
+                      minPaymentRuleFixedCents: acc.minPaymentRuleFixedCents,
+                      minPaymentRulePercentageBps: acc.minPaymentRulePercentageBps,
+                      minPaymentRuleIncludesInterest: acc.minPaymentRuleIncludesInterest,
+                      promoEndDate: acc.promoEndDate,
+                      promoDurationMonths: acc.promoDurationMonths,
+                      accountOpenDate: acc.accountOpenDate,
+                      notes: acc.notes,
+                    })),
+                    budget: {
+                      monthlyBudgetCents: originalBudget,
+                      futureChanges: budget.futureChanges || [],
+                      lumpSumPayments: budget.lumpSumPayments || [],
+                    },
+                    preferences: {
+                      strategy: preferences?.strategy || "minimize_interest",
+                      paymentShape: preferences?.paymentShape || "standard",
+                    },
+                    planStartDate: new Date().toISOString().split('T')[0],
+                  };
+                  
+                  await apiRequest("POST", "/api/plans/generate", planRequest);
+                  
+                  queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+                  refetch();
+                  
+                  toast({
+                    title: "Budget reset!",
+                    description: "Your plan has been restored to the original budget.",
+                  });
+                }}
+                disabled={reOptimizeMutation.isPending || !originalBudget || budget?.monthlyBudgetCents === originalBudget}
+                data-testid="button-reset-budget"
+              >
+                Reset to Original Budget
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
