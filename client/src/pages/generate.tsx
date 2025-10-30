@@ -16,9 +16,9 @@ export default function Generate() {
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Initializing...");
 
-  const { data: accounts } = useQuery({ queryKey: ["/api/accounts"] });
-  const { data: budget } = useQuery({ queryKey: ["/api/budget"] });
-  const { data: preferences } = useQuery({ queryKey: ["/api/preferences"] });
+  const { data: accounts, isSuccess: accountsLoaded } = useQuery({ queryKey: ["/api/accounts"] });
+  const { data: budget, isSuccess: budgetLoaded } = useQuery({ queryKey: ["/api/budget"] });
+  const { data: preferences, isSuccess: preferencesLoaded } = useQuery({ queryKey: ["/api/preferences"] });
 
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -86,12 +86,17 @@ export default function Generate() {
   });
 
   useEffect(() => {
+    // Wait for all queries to finish loading before checking
+    if (!accountsLoaded || !budgetLoaded || !preferencesLoaded) {
+      return;
+    }
+
     if (accounts && budget && preferences) {
       // Auto-start generation
       setTimeout(() => {
         generateMutation.mutate();
       }, 1000);
-    } else if (accounts !== undefined && budget === undefined && preferences !== undefined) {
+    } else if (accountsLoaded && !budget) {
       // Budget is missing - show error
       toast({
         title: "Budget Required",
@@ -101,7 +106,7 @@ export default function Generate() {
       setTimeout(() => {
         setLocation("/budget");
       }, 2000);
-    } else if (accounts !== undefined && preferences === undefined) {
+    } else if (accountsLoaded && !preferences) {
       // Preferences missing
       toast({
         title: "Preferences Required",
@@ -112,7 +117,7 @@ export default function Generate() {
         setLocation("/preferences");
       }, 2000);
     }
-  }, [accounts, budget, preferences]);
+  }, [accounts, budget, preferences, accountsLoaded, budgetLoaded, preferencesLoaded]);
 
   return (
     <div className="min-h-screen bg-background">

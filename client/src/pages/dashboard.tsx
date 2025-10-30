@@ -271,9 +271,9 @@ export default function Dashboard() {
                 const accountPayments = planData?.filter(r => r.lenderName === account.lenderName) || [];
                 const totalPaid = accountPayments.reduce((sum, r) => sum + r.paymentCents, 0);
                 const totalInterest = accountPayments.reduce((sum, r) => sum + r.interestChargedCents, 0);
-                const payoffMonth = accountPayments.length > 0
-                  ? Math.max(...accountPayments.map(r => r.month))
-                  : 0;
+                // Find the first month where this account's balance reaches zero
+                const payoffRecord = accountPayments.find(r => r.endingBalanceCents <= 0);
+                const payoffMonth = payoffRecord ? payoffRecord.month : 0;
 
                 return (
                   <Card key={account.id} data-testid={`card-account-detail-${account.id}`}>

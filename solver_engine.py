@@ -284,10 +284,14 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
             else:
                 model.Add(previous_balance_var == balances[(account.lender_name, month - 1)])
 
-            # 5.2.a. 'is_active' constraint: Account is active if balance > 0
-            # All logic below now uses 'previous_balance_var'
+            # 5.2.a. 'is_active' constraint: Account is active if PREVIOUS balance > 0
+            # CRITICAL FIX: DON'T use is_active directly - it can be freely manipulated by solver
+            # Instead, check previous_balance directly in all constraints
+            # 
+            # We still define the is_active boolean for backward compatibility,
+            # but we won't use it to gate minimum payments anymore
             model.Add(previous_balance_var > 0).OnlyEnforceIf(is_active[key])
-            model.Add(previous_balance_var <= 0).OnlyEnforceIf(is_active[key].Not())
+            model.Add(previous_balance_var == 0).OnlyEnforceIf(is_active[key].Not())
             
             # 5.2.b. Interest Calculation (with Promotional APR logic)
             promo_end_idx = promo_end_month_map[account.lender_name]
@@ -369,10 +373,25 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
                 [raw_minimum_payment_var, total_owed_var]
             )
             
-            # 7. Enforce the final minimum payment and non-activity
-  
-            model.Add(payments[key] >= final_minimum_payment_var).OnlyEnforceIf(is_active[key])
-            model.Add(payments[key] == 0).OnlyEnforceIf(is_active[key].Not())
+            # 7. Enforce the final minimum payment UNCONDITIONALLY based on previous balance
+            # CRITICAL FIX: Instead of using a boolean gate that can be manipulated,
+            # use a conditional constraint that checks balance directly
+            # 
+            # The key insight: If previous_balance > 0, payment MUST be >= minimum
+            # If previous_balance == 0, payment MUST be == 0
+            # 
+            # We can't directly test "previous_balance > 0" in CP-SAT, so we use:
+            # payment >= (previous_balance > 0 ? final_minimum : 0)
+            # 
+            # Implemented as: Create conditional based on whether any balance exists
+            balance_is_zero = model.NewBoolVar(f'balance_zero_{key}')
+            model.Add(previous_balance_var == 0).OnlyEnforceIf(balance_is_zero)
+            model.Add(previous_balance_var > 0).OnlyEnforceIf(balance_is_zero.Not())
+            
+            # When balance is zero, payment must be zero
+            model.Add(payments[key] == 0).OnlyEnforceIf(balance_is_zero)
+            # When balance is non-zero, payment must meet minimum
+            model.Add(payments[key] >= final_minimum_payment_var).OnlyEnforceIf(balance_is_zero.Not())
             
             # 5.2.d. Balance Update (REMAINS AT END)
             # This constraint is also clean: (IntVar == IntVar + IntVar - IntVar)
@@ -592,11 +611,20 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
 
             for account in portfolio.accounts:
                 key = (account.lender_name, month)
+                
+                # DEBUG: Check for minimum payment violations
+                prev_bal_key = (account.lender_name, month - 1) if month > 0 else None
+                prev_balance = solver.Value(balances[prev_bal_key]) if prev_bal_key else account.current_balance_cents
+                payment = int(solver.Value(payments[key]))
+                
+                if prev_balance > 0 and payment == 0:
+                    print(f"⚠️  WARNING: {account.lender_name} month {month+1} has prev_balance=${prev_balance/100:.2f} but payment=$0.00!")
+                
                 result = MonthlyResult(
                     month=month + 1,
      
                     lender_name=account.lender_name,
-                    payment_cents=int(solver.Value(payments[key])),
+                    payment_cents=payment,
                     interest_charged_cents=int(solver.Value(interest_charged[key])),
                     ending_balance_cents=int(solver.Value(balances[key])),
                 )
