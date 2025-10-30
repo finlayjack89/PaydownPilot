@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet } from "lucide-react";
+import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2 } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
@@ -13,6 +13,10 @@ import { DebtTimeline } from "@/components/debt-timeline";
 import { AccountTimeline } from "@/components/account-timeline";
 import type { MonthlyResult } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface PlanSummary {
   totalDebt: number;
@@ -24,7 +28,17 @@ interface PlanSummary {
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [scheduleView, setScheduleView] = useState<"by-month" | "by-account">("by-month");
+  
+  // Accelerator state
+  const [acceleratorValue, setAcceleratorValue] = useState(0);
+  const [heuristicPayoff, setHeuristicPayoff] = useState(0);
+  const [heuristicInterest, setHeuristicInterest] = useState(0);
+  
+  // AI Assistant state
+  const [aiQuestion, setAiQuestion] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
 
   const { data: plan, isLoading, isError, refetch } = useQuery({
     queryKey: ["/api/plans/latest"],
@@ -38,6 +52,90 @@ export default function Dashboard() {
 
   const { data: budget } = useQuery({
     queryKey: ["/api/budget"],
+  });
+
+  const { data: preferences } = useQuery({
+    queryKey: ["/api/preferences"],
+  });
+
+  // Re-optimize mutation with new budget
+  const reOptimizeMutation = useMutation({
+    mutationFn: async (newBudgetCents: number) => {
+      if (!budget || !preferences || !accounts || accounts.length === 0) {
+        throw new Error("Required data not loaded");
+      }
+      
+      const planRequest = {
+        accounts: accounts.map((acc: any) => ({
+          lenderName: acc.lenderName,
+          accountType: acc.accountType,
+          currentBalanceCents: acc.currentBalanceCents,
+          aprStandardBps: acc.aprStandardBps,
+          paymentDueDay: acc.paymentDueDay,
+          minPaymentRuleFixedCents: acc.minPaymentRuleFixedCents,
+          minPaymentRulePercentageBps: acc.minPaymentRulePercentageBps,
+          minPaymentRuleIncludesInterest: acc.minPaymentRuleIncludesInterest,
+          promoEndDate: acc.promoEndDate,
+          promoDurationMonths: acc.promoDurationMonths,
+          accountOpenDate: acc.accountOpenDate,
+          notes: acc.notes,
+        })),
+        budget: {
+          monthlyBudgetCents: newBudgetCents,
+          futureChanges: budget.futureChanges || [],
+          lumpSumPayments: budget.lumpSumPayments || [],
+        },
+        preferences: {
+          strategy: preferences.strategy || "minimize_interest",
+          paymentShape: preferences.paymentShape || "standard",
+        },
+        planStartDate: new Date().toISOString().split('T')[0],
+      };
+      
+      return await apiRequest("POST", "/api/plans/generate", planRequest);
+    },
+    onSuccess: async (data, newBudgetCents) => {
+      // Update the budget in the database to match the new plan
+      await apiRequest("PATCH", "/api/budget", {
+        monthlyBudgetCents: newBudgetCents,
+      });
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
+      refetch();
+      toast({
+        title: "Plan updated!",
+        description: "Your optimized plan has been recalculated with the new budget.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Optimization failed",
+        description: error.message || "Could not update your plan.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // AI explanation mutation
+  const aiExplainMutation = useMutation({
+    mutationFn: async (question: string) => {
+      return await apiRequest("POST", "/api/plans/explain", {
+        question,
+        planData: plan?.planData,
+        explanation: plan?.explanation,
+      });
+    },
+    onSuccess: (data: any) => {
+      setAiResponse(data.answer);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Question failed",
+        description: error.message || "Could not get an answer.",
+        variant: "destructive",
+      });
+    },
   });
 
   const planData = plan?.planData as MonthlyResult[] | undefined;
@@ -54,6 +152,46 @@ export default function Dashboard() {
 
   const payoffDate = new Date();
   payoffDate.setMonth(payoffDate.getMonth() + summary.payoffMonths);
+
+  // Initialize and update heuristic baseline when plan changes
+  useEffect(() => {
+    if (summary.payoffMonths > 0) {
+      setHeuristicPayoff(summary.payoffMonths);
+      setHeuristicInterest(summary.totalInterest);
+      setAcceleratorValue(0); // Reset slider when plan updates
+    }
+  }, [plan?.id, summary.payoffMonths, summary.totalInterest]);
+
+  // Simple heuristic calculator for instant feedback
+  const calculateHeuristic = (extraCents: number) => {
+    if (!budget || !accounts || accounts.length === 0) return;
+    
+    const newBudget = (budget.monthlyBudgetCents || 0) + extraCents;
+    const totalDebt = summary.totalDebt;
+    
+    // Simple heuristic: assume average APR and distribute payments
+    const avgApr = accounts.reduce((sum: number, acc: any) => sum + (acc.aprStandardBps / 10000), 0) / accounts.length;
+    const monthlyRate = avgApr / 12;
+    
+    // Rough estimate using amortization formula
+    let estimatedMonths = 0;
+    let remainingDebt = totalDebt;
+    let estimatedInterest = 0;
+    
+    while (remainingDebt > 0 && estimatedMonths < 500) {
+      const interestCharge = remainingDebt * monthlyRate;
+      const principal = Math.min(newBudget - interestCharge, remainingDebt);
+      
+      if (principal <= 0) break; // Can't make progress
+      
+      estimatedInterest += interestCharge;
+      remainingDebt -= principal;
+      estimatedMonths++;
+    }
+    
+    setHeuristicPayoff(Math.ceil(estimatedMonths));
+    setHeuristicInterest(Math.round(estimatedInterest));
+  };
 
   if (isLoading) {
     return (
@@ -206,6 +344,68 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Accelerator Slider */}
+        <Card className="mb-8" data-testid="card-accelerator">
+          <CardHeader>
+            <CardTitle>Accelerator</CardTitle>
+            <CardDescription>
+              See the impact of paying a little extra each month
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="font-mono text-lg font-semibold">
+                + {formatCurrency(acceleratorValue * 100, user?.currency)}
+              </span>
+              <span className="text-sm text-muted-foreground">per month</span>
+            </div>
+            <Slider
+              value={[acceleratorValue]}
+              max={500}
+              step={25}
+              onValueChange={(value) => {
+                const newValue = value[0];
+                setAcceleratorValue(newValue);
+                calculateHeuristic(newValue * 100);
+              }}
+              data-testid="slider-accelerator"
+            />
+            <div className="flex justify-between items-center pt-2">
+              <div className="text-sm">
+                <span className="text-muted-foreground">New Payoff: </span>
+                <span className="font-semibold" data-testid="text-heuristic-payoff">
+                  {heuristicPayoff} mo
+                </span>
+              </div>
+              <div className="text-sm">
+                <span className="text-muted-foreground">Est. Saved: </span>
+                <span className="font-semibold text-green-500" data-testid="text-heuristic-savings">
+                  {formatCurrency(Math.max(0, summary.totalInterest - heuristicInterest), user?.currency)}
+                </span>
+              </div>
+            </div>
+            <Button 
+              className="w-full"
+              onClick={() => {
+                if (!budget) return;
+                const newBudget = budget.monthlyBudgetCents + (acceleratorValue * 100);
+                reOptimizeMutation.mutate(newBudget);
+              }}
+              disabled={reOptimizeMutation.isPending || acceleratorValue === 0 || !budget || !preferences}
+              data-testid="button-apply-accelerator"
+            >
+              {reOptimizeMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Optimizing...
+                </>
+              ) : (
+                "Apply & Re-Optimize Plan"
+              )}
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Timeline Chart */}
         {planData && (
@@ -446,25 +646,59 @@ export default function Dashboard() {
               <CardHeader>
                 <CardTitle>Why This Plan Works</CardTitle>
                 <CardDescription>
-                  AI-generated explanation of your optimization strategy
+                  AI-powered assistant to explain your optimization strategy
                 </CardDescription>
               </CardHeader>
-              <CardContent className="prose prose-sm max-w-none dark:prose-invert">
-                {plan.explanation ? (
-                  <div className="whitespace-pre-wrap">{plan.explanation}</div>
-                ) : (
-                  <div className="space-y-4">
-                    <p>
-                      Your payment plan has been optimized using advanced constraint programming to find the best allocation of your {formatCurrency(summary.nextPayment, user?.currency)} monthly budget across your {accounts.length} accounts.
-                    </p>
-                    <p>
-                      By following this plan, you'll pay off all your debts in {summary.payoffMonths} months while paying only {formatCurrency(summary.totalInterest, user?.currency)} in total interest charges.
-                    </p>
-                    <p>
-                      The optimizer takes into account each account's APR, minimum payment requirements, promotional periods, and payment due dates to create a mathematically optimal repayment schedule.
-                    </p>
-                  </div>
-                )}
+              <CardContent className="space-y-4">
+                <div className="min-h-[200px] max-h-[400px] overflow-y-auto p-4 border rounded-md bg-muted/50" data-testid="div-explanation-display">
+                  {aiResponse ? (
+                    <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="div-ai-response">
+                      <div className="whitespace-pre-wrap">{aiResponse}</div>
+                    </div>
+                  ) : plan.explanation ? (
+                    <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="div-initial-explanation">
+                      <div className="whitespace-pre-wrap">{plan.explanation}</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 text-sm" data-testid="div-default-explanation">
+                      <p>
+                        Your payment plan has been optimized using advanced constraint programming to find the best allocation of your {formatCurrency(summary.nextPayment, user?.currency)} monthly budget across your {accounts.length} accounts.
+                      </p>
+                      <p>
+                        By following this plan, you'll pay off all your debts in {summary.payoffMonths} months while paying only {formatCurrency(summary.totalInterest, user?.currency)} in total interest charges.
+                      </p>
+                      <p>
+                        The optimizer takes into account each account's APR, minimum payment requirements, promotional periods, and payment due dates to create a mathematically optimal repayment schedule.
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Textarea
+                    placeholder="Ask a follow-up question, e.g., 'Why am I paying the blue card first?'"
+                    value={aiQuestion}
+                    onChange={(e) => setAiQuestion(e.target.value)}
+                    className="flex-grow"
+                    rows={2}
+                    data-testid="textarea-ai-question"
+                  />
+                  <Button
+                    onClick={() => {
+                      if (aiQuestion.trim()) {
+                        aiExplainMutation.mutate(aiQuestion);
+                        setAiQuestion("");
+                      }
+                    }}
+                    disabled={aiExplainMutation.isPending || !aiQuestion.trim()}
+                    data-testid="button-ask-ai"
+                  >
+                    {aiExplainMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

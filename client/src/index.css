@@ -212,6 +212,8 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    background-image: theme('backgroundImage.radial-gradient-top');
+    background-repeat: no-repeat;
   }
 }
 

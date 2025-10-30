@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
 import { setupAuth, requireAuth, hashPassword } from "./auth";
-import { discoverLenderRule, generatePlanExplanation } from "./anthropic";
+import { discoverLenderRule, generatePlanExplanation, answerPlanQuestion } from "./anthropic";
 import { 
   insertUserSchema, insertAccountSchema, insertBudgetSchema, 
   insertPreferenceSchema, type InsertAccount, type InsertBudget
@@ -40,39 +40,56 @@ async function fetchWithRetry(
 }
 
 // Enum mapping functions to translate frontend values to Python backend values
+// These functions accept both snake_case (frontend) and human-readable (database) formats
 function mapAccountTypeToPython(frontendValue: string): string {
   const mapping: Record<string, string> = {
+    // Snake_case keys (from frontend forms)
     "credit_card": "Credit Card",
     "bnpl": "Buy Now, Pay Later",
     "loan": "Loan",
+    // Human-readable keys (from database storage)
+    "Credit Card": "Credit Card",
+    "Buy Now, Pay Later": "Buy Now, Pay Later",
+    "Loan": "Loan",
   };
   if (!mapping[frontendValue]) {
-    throw new Error(`Unknown account type: ${frontendValue}. Expected one of: ${Object.keys(mapping).join(", ")}`);
+    throw new Error(`Unknown account type: ${frontendValue}. Expected one of: credit_card, bnpl, loan`);
   }
   return mapping[frontendValue];
 }
 
 function mapStrategyToPython(frontendValue: string): string {
   const mapping: Record<string, string> = {
+    // Snake_case keys (from frontend)
     "minimize_interest": "Minimize Total Interest",
     "minimize_spend": "Minimize Monthly Spend",
     "maximize_speed": "Pay Off ASAP with Max Budget",
     "promo_windows": "Pay Off Within Promo Windows",
     "minimize_spend_to_clear_promos": "Minimize Spend to Clear Promos",
+    // Human-readable keys (from database)
+    "Minimize Total Interest": "Minimize Total Interest",
+    "Minimize Monthly Spend": "Minimize Monthly Spend",
+    "Pay Off ASAP with Max Budget": "Pay Off ASAP with Max Budget",
+    "Pay Off Within Promo Windows": "Pay Off Within Promo Windows",
+    "Minimize Spend to Clear Promos": "Minimize Spend to Clear Promos",
   };
   if (!mapping[frontendValue]) {
-    throw new Error(`Unknown strategy: ${frontendValue}. Expected one of: ${Object.keys(mapping).join(", ")}`);
+    throw new Error(`Unknown strategy: ${frontendValue}. Expected one of: minimize_interest, minimize_spend, maximize_speed, promo_windows, minimize_spend_to_clear_promos`);
   }
   return mapping[frontendValue];
 }
 
 function mapPaymentShapeToPython(frontendValue: string): string {
   const mapping: Record<string, string> = {
+    // Snake_case keys (from frontend)
     "standard": "Linear (Same Amount Per Account)",
     "optimized": "Optimized (Variable Amounts)",
+    // Human-readable keys (from database)
+    "Linear (Same Amount Per Account)": "Linear (Same Amount Per Account)",
+    "Optimized (Variable Amounts)": "Optimized (Variable Amounts)",
   };
   if (!mapping[frontendValue]) {
-    throw new Error(`Unknown payment shape: ${frontendValue}. Expected one of: ${Object.keys(mapping).join(", ")}`);
+    throw new Error(`Unknown payment shape: ${frontendValue}. Expected one of: standard, optimized`);
   }
   return mapping[frontendValue];
 }
@@ -257,6 +274,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(budget);
     } catch (error: any) {
       res.status(400).send({ message: error.message || "Failed to save budget" });
+    }
+  });
+
+  app.patch("/api/budget", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const validatedData = insertBudgetSchema.partial().parse(req.body);
+      
+      // Get existing budget to merge with updates
+      const existing = await storage.getBudgetByUserId(userId);
+      if (!existing) {
+        return res.status(404).send({ message: "Budget not found" });
+      }
+
+      const budget = await storage.createOrUpdateBudget({
+        ...existing,
+        ...validatedData,
+        userId,
+      } as InsertBudget);
+
+      res.json(budget);
+    } catch (error: any) {
+      res.status(400).send({ message: error.message || "Failed to update budget" });
     }
   });
 
@@ -529,6 +569,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(plans);
     } catch (error: any) {
       res.status(500).send({ message: error.message || "Failed to fetch plans" });
+    }
+  });
+
+  app.post("/api/plans/explain", requireAuth, async (req, res) => {
+    try {
+      const { question, planData, explanation } = req.body;
+
+      if (!question) {
+        return res.status(400).send({ message: "Question is required" });
+      }
+
+      const answer = await answerPlanQuestion(question, planData, explanation);
+      
+      res.json({ answer });
+    } catch (error: any) {
+      res.status(500).send({ message: error.message || "Failed to answer question" });
     }
   });
 

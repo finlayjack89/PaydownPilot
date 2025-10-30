@@ -101,6 +101,13 @@ export default {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
       },
+      backgroundImage: {
+        'radial-gradient-top': 'radial-gradient(40% 40% at 50% 0%, hsl(var(--primary) / 0.05), transparent 100%)',
+      },
+      boxShadow: {
+        'soft-lg': '0px 8px 16px rgba(0, 0, 0, 0.02), 0px 16px 32px rgba(0, 0, 0, 0.08)',
+        'soft-lg-dark': '0px 8px 16px rgba(0, 0, 0, 0.1), 0px 16px 32px rgba(0, 0, 0, 0.15)',
+      },
     },
   },
   plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],
