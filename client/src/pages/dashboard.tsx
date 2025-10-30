@@ -32,6 +32,10 @@ export default function Dashboard() {
     queryKey: ["/api/accounts"],
   });
 
+  const { data: budget } = useQuery({
+    queryKey: ["/api/budget"],
+  });
+
   const planData = plan?.planData as MonthlyResult[] | undefined;
   
   // Calculate summary statistics
@@ -112,7 +116,7 @@ export default function Dashboard() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5 mb-8">
           <Card data-testid="card-total-debt">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -177,6 +181,23 @@ export default function Dashboard() {
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 Due this month
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-monthly-budget">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Monthly Budget
+              </CardTitle>
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-mono font-bold">
+                {formatCurrency(budget?.monthlyBudgetCents || 0, user?.currency)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Available for debt
               </p>
             </CardContent>
           </Card>
