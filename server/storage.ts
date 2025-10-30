@@ -66,11 +66,43 @@ export class DatabaseStorage implements IStorage {
 
   // Account methods
   async getAccountsByUserId(userId: string): Promise<Account[]> {
-    return await db.select().from(accounts).where(eq(accounts.userId, userId));
+    return await db.select({
+      id: accounts.id,
+      userId: accounts.userId,
+      lenderName: accounts.lenderName,
+      accountType: accounts.accountType,
+      currentBalanceCents: accounts.currentBalanceCents,
+      aprStandardBps: accounts.aprStandardBps,
+      paymentDueDay: accounts.paymentDueDay,
+      minPaymentRuleFixedCents: accounts.minPaymentRuleFixedCents,
+      minPaymentRulePercentageBps: accounts.minPaymentRulePercentageBps,
+      minPaymentRuleIncludesInterest: accounts.minPaymentRuleIncludesInterest,
+      promoEndDate: accounts.promoEndDate,
+      promoDurationMonths: accounts.promoDurationMonths,
+      accountOpenDate: accounts.accountOpenDate,
+      notes: accounts.notes,
+      createdAt: accounts.createdAt,
+    }).from(accounts).where(eq(accounts.userId, userId));
   }
 
   async getAccount(id: string): Promise<Account | undefined> {
-    const [account] = await db.select().from(accounts).where(eq(accounts.id, id));
+    const [account] = await db.select({
+      id: accounts.id,
+      userId: accounts.userId,
+      lenderName: accounts.lenderName,
+      accountType: accounts.accountType,
+      currentBalanceCents: accounts.currentBalanceCents,
+      aprStandardBps: accounts.aprStandardBps,
+      paymentDueDay: accounts.paymentDueDay,
+      minPaymentRuleFixedCents: accounts.minPaymentRuleFixedCents,
+      minPaymentRulePercentageBps: accounts.minPaymentRulePercentageBps,
+      minPaymentRuleIncludesInterest: accounts.minPaymentRuleIncludesInterest,
+      promoEndDate: accounts.promoEndDate,
+      promoDurationMonths: accounts.promoDurationMonths,
+      accountOpenDate: accounts.accountOpenDate,
+      notes: accounts.notes,
+      createdAt: accounts.createdAt,
+    }).from(accounts).where(eq(accounts.id, id));
     return account || undefined;
   }
 
@@ -209,7 +241,11 @@ class GuestStorageWrapper implements IStorage {
 
   async createAccount(account: InsertAccount): Promise<Account> {
     if (this.isGuest(account.userId)) {
-      const newAccount = { ...account, createdAt: new Date() } as Account;
+      const newAccount = { 
+        ...account, 
+        id: `guest-account-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        createdAt: new Date() 
+      } as Account;
       this.guestData.accounts.push(newAccount);
       return newAccount;
     }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRoute, Link, useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
-import { useActivePlan } from "@/hooks/use-plan-data";
+import { useAccounts, useActivePlan } from "@/hooks/use-plan-data";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { AccountTimeline } from "@/components/account-timeline";
 import type { Account } from "@shared/schema";
@@ -53,10 +53,8 @@ export default function AccountDetail() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  const { data: account, isLoading: isLoadingAccount } = useQuery<Account>({
-    queryKey: ["/api/accounts", accountId],
-    enabled: !!accountId,
-  });
+  const { data: accounts = [], isLoading: isLoadingAccount } = useAccounts();
+  const account = accounts.find(acc => acc.id === accountId);
 
   const { data: plan, isLoading: isLoadingPlan } = useActivePlan();
 
