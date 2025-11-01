@@ -387,9 +387,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           payment_due_day: acc.paymentDueDay,
           min_payment_rule_type: "GREATER_OF",
           min_payment_rule: {
-            fixed_cents: acc.minPaymentRuleFixedCents || 0,
-            percentage_bps: acc.minPaymentRulePercentageBps || 0,
-            includes_interest: acc.minPaymentRuleIncludesInterest || false,
+            // CRITICAL FIX: Frontend sends nested minPaymentRule object, not flat fields
+            fixed_cents: acc.minPaymentRule?.fixedCents || 0,
+            percentage_bps: acc.minPaymentRule?.percentageBps || 0,
+            includes_interest: acc.minPaymentRule?.includesInterest || false,
           },
           promo_end_date: acc.promoEndDate || null,
           promo_duration_months: acc.promoDurationMonths || null,
@@ -416,6 +417,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         plan_start_date: planStartDate || new Date().toISOString().split('T')[0],
       };
+
+      // LOG: Verify minimum payment rules are being sent correctly
+      console.log('[DEBUG] Sending to Python solver - Account minimum payment rules:');
+      portfolioInput.accounts.forEach((acc: any) => {
+        console.log(`  ${acc.lender_name}: fixed=$${acc.min_payment_rule.fixed_cents/100}, percentage=${acc.min_payment_rule.percentage_bps}bps`);
+      });
 
       // Call Python FastAPI backend with retry logic
       const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || "http://127.0.0.1:8000";
@@ -477,6 +484,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const pythonResult = await pythonResponse.json();
 
+      // LOG 1: Raw Python solver output
+      console.log('[DEBUG] Raw pythonResult from solver:', JSON.stringify({
+        status: pythonResult.status,
+        planLength: pythonResult.plan?.length,
+        firstFewResults: pythonResult.plan?.slice(0, 10).map((r: any) => ({
+          month: r.month,
+          lender_name: r.lender_name,
+          payment_cents: r.payment_cents,
+          ending_balance_cents: r.ending_balance_cents,
+        }))
+      }, null, 2));
+
       // Validate solver response
       if (!pythonResult.status) {
         return res.status(500).send({ 
@@ -499,6 +518,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           principalPaidCents: result.principal_paid_cents,
           endingBalanceCents: result.ending_balance_cents,
         }));
+
+        // LOG 2: Transformed planData (after mapping)
+        console.log('[DEBUG] Transformed planData (first 10):', JSON.stringify(
+          planData.slice(0, 10).map(r => ({
+            month: r.month,
+            lenderName: r.lenderName,
+            paymentCents: r.paymentCents,
+            endingBalanceCents: r.endingBalanceCents,
+          })),
+          null,
+          2
+        ));
       } else if (pythonResult.status === "INFEASIBLE") {
         return res.status(400).send({
           message: errorMessage || "Budget too low to cover minimum payments. Please increase your monthly budget.",
@@ -544,6 +575,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountSchedules: structuredPlan.accountSchedules.length
       }, null, 2));
 
+      // LOG 3: planData before saving to database
+      console.log('[DEBUG] planData before database save (first 10):', JSON.stringify(
+        planData.slice(0, 10).map(r => ({
+          month: r.month,
+          lenderName: r.lenderName,
+          paymentCents: r.paymentCents,
+          endingBalanceCents: r.endingBalanceCents,
+        })),
+        null,
+        2
+      ));
+
       // Save plan
       const plan = await storage.createPlan({
         id: randomUUID(),
@@ -554,6 +597,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         explanation,
         createdAt: new Date(),
       });
+
+      // LOG 4: Verify what was saved to database
+      console.log('[DEBUG] Plan saved to database with id:', plan.id);
+      console.log('[DEBUG] plan.planData from database (first 10):', JSON.stringify(
+        (plan.planData || []).slice(0, 10).map((r: any) => ({
+          month: r.month,
+          lenderName: r.lenderName,
+          paymentCents: r.paymentCents,
+          endingBalanceCents: r.endingBalanceCents,
+        })),
+        null,
+        2
+      ));
 
       // Return enriched plan response with structured data
       res.json({
@@ -576,6 +632,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send({ message: "No plan found" });
       }
 
+      // LOG 5: Retrieved planData from database
+      console.log('[DEBUG] Retrieved plan from database, id:', plan.id);
+      console.log('[DEBUG] plan.planData from database (first 10):', JSON.stringify(
+        (plan.planData || []).slice(0, 10).map((r: any) => ({
+          month: r.month,
+          lenderName: r.lenderName,
+          paymentCents: r.paymentCents,
+          endingBalanceCents: r.endingBalanceCents,
+        })),
+        null,
+        2
+      ));
+
       // Fetch accounts to rebuild structured plan data
       const accounts = await storage.getAccountsByUserId(userId);
       
@@ -585,6 +654,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accounts,
         plan.planStartDate || new Date().toISOString().split('T')[0]
       );
+
+      // LOG 6: Final response being sent to client
+      console.log('[DEBUG] Sending response to client with planData (first 10):', JSON.stringify(
+        (plan.planData || []).slice(0, 10).map((r: any) => ({
+          month: r.month,
+          lenderName: r.lenderName,
+          paymentCents: r.paymentCents,
+          endingBalanceCents: r.endingBalanceCents,
+        })),
+        null,
+        2
+      ));
 
       // Return enriched plan with structured data
       res.json({
