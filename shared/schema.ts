@@ -212,11 +212,23 @@ export const insertAccountSchema = createInsertSchema(accounts, {
   currentBalanceCents: z.number().int().min(0),
   aprStandardBps: z.number().int().min(0),
   paymentDueDay: z.number().int().min(1).max(28),
+  minPaymentRuleFixedCents: z.number().int().min(0),
+  minPaymentRulePercentageBps: z.number().int().min(0),
 }).omit({
   id: true,
   userId: true,
   createdAt: true,
-});
+}).refine(
+  (data) => {
+    // CRITICAL FIX: Ensure at least one minimum payment component is non-zero
+    // This prevents the solver from allowing $0 payments during promo periods
+    return data.minPaymentRuleFixedCents > 0 || data.minPaymentRulePercentageBps > 0;
+  },
+  {
+    message: "At least one minimum payment component must be greater than zero (either fixed amount or percentage)",
+    path: ["minPaymentRuleFixedCents"], // This will be the field that shows the error
+  }
+);
 
 export const insertBudgetSchema = createInsertSchema(budgets, {
   monthlyBudgetCents: z.number().int().min(0),
