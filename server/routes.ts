@@ -576,7 +576,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send({ message: "No plan found" });
       }
 
-      res.json(plan);
+      // Fetch accounts to rebuild structured plan data
+      const accounts = await storage.getAccountsByUserId(userId);
+      
+      // Rebuild structured plan data from planData
+      const structuredPlan = buildStructuredPlan(
+        plan.planData || [],
+        accounts,
+        plan.planStartDate || new Date().toISOString().split('T')[0]
+      );
+
+      // Return enriched plan with structured data
+      res.json({
+        ...plan,
+        ...structuredPlan,
+        plan: plan.planData,
+      });
     } catch (error: any) {
       res.status(500).send({ message: error.message || "Failed to fetch plan" });
     }
