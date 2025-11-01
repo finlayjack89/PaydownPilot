@@ -4,14 +4,16 @@ import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ProgressStepper } from "@/components/progress-stepper";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { ArrowRight, ArrowLeft } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { countries } from "@/lib/countries";
+import { cn } from "@/lib/utils";
 
 const steps = [
   { id: 1, name: "Profile", description: "Basic information" },
@@ -29,6 +31,8 @@ export default function Onboarding() {
   const [country, setCountry] = useState(user?.country || "");
   const [region, setRegion] = useState(user?.region || "");
   const [currency, setCurrency] = useState(user?.currency || "USD");
+  const [countryOpen, setCountryOpen] = useState(false);
+  const [regionOpen, setRegionOpen] = useState(false);
 
   const selectedCountry = countries.find(c => c.code === country);
 
@@ -129,50 +133,104 @@ export default function Onboarding() {
             <CardContent className="space-y-6">
               <div className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="country" className="text-sm font-medium">
+                  <Label className="text-sm font-medium">
                     Country
                   </Label>
-                  <Select value={country} onValueChange={(value) => {
-                    setCountry(value);
-                    const newCountry = countries.find(c => c.code === value);
-                    if (newCountry) {
-                      setCurrency(newCountry.currency);
-                      setRegion("");
-                    }
-                  }}>
-                    <SelectTrigger id="country" className="h-12" data-testid="select-country">
-                      <SelectValue placeholder="Select country" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {countries.map((c) => (
-                        <SelectItem key={c.code} value={c.code}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={countryOpen} onOpenChange={setCountryOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={countryOpen}
+                        className="h-12 w-full justify-between font-normal"
+                        data-testid="select-country"
+                      >
+                        {country
+                          ? countries.find((c) => c.code === country)?.name
+                          : "Select country..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search countries..." />
+                        <CommandList>
+                          <CommandEmpty>No country found.</CommandEmpty>
+                          <CommandGroup>
+                            {countries.map((c) => (
+                              <CommandItem
+                                key={c.code}
+                                value={c.name}
+                                onSelect={() => {
+                                  setCountry(c.code);
+                                  setCurrency(c.currency);
+                                  setRegion("");
+                                  setCountryOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    country === c.code ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {c.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="region" className="text-sm font-medium">
+                  <Label className="text-sm font-medium">
                     Region/State
                   </Label>
-                  <Select 
-                    value={region} 
-                    onValueChange={setRegion}
-                    disabled={!selectedCountry}
-                  >
-                    <SelectTrigger id="region" className="h-12" data-testid="select-region">
-                      <SelectValue placeholder="Select region" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedCountry?.regions.map((r) => (
-                        <SelectItem key={r} value={r}>
-                          {r}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={regionOpen} onOpenChange={setRegionOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={regionOpen}
+                        disabled={!selectedCountry}
+                        className="h-12 w-full justify-between font-normal"
+                        data-testid="select-region"
+                      >
+                        {region || "Select region..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search regions..." />
+                        <CommandList>
+                          <CommandEmpty>No region found.</CommandEmpty>
+                          <CommandGroup>
+                            {selectedCountry?.regions.map((r) => (
+                              <CommandItem
+                                key={r}
+                                value={r}
+                                onSelect={() => {
+                                  setRegion(r);
+                                  setRegionOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    region === r ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {r}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 
