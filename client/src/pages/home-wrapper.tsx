@@ -13,16 +13,11 @@ export default function HomePageWrapper() {
     </div>;
   }
   
-  // No accounts → EmptyDashboard
-  if (!accounts || accounts.length === 0) {
-    return <EmptyDashboard />;
+  // Has plan → ActiveDashboard
+  if (plan) {
+    return <ActiveDashboard />;
   }
   
-  // Has accounts but no plan → Redirect to generate
-  if (!plan) {
-    return <Redirect to="/generate" />;
-  }
-  
-  // Has both → ActiveDashboard
-  return <ActiveDashboard />;
+  // No plan → EmptyDashboard
+  return <EmptyDashboard />;
 }

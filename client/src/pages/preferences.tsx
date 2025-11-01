@@ -7,6 +7,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ArrowRight, ArrowLeft, Target, DollarSign, Zap, Trophy, TrendingDown } from "lucide-react";
 import { OptimizationStrategy, PaymentShape } from "@shared/schema";
+import type { Preference } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -62,7 +63,7 @@ export default function Preferences() {
     PaymentShape.OPTIMIZED_MONTH_TO_MONTH
   );
 
-  const { data: existingPrefs } = useQuery({
+  const { data: existingPrefs } = useQuery<Preference>({
     queryKey: ["/api/preferences"],
   });
 

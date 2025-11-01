@@ -73,7 +73,7 @@ export default function Generate() {
       await queryClient.refetchQueries({ queryKey: ["/api/plans/latest"] });
       
       setTimeout(() => {
-        setLocation("/dashboard");
+        setLocation("/plan");
       }, 500);
     },
     onError: (error: any) => {

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Budget, Account } from "@shared/schema";
 
 interface FutureBudgetChange {
   effectiveDate: string;
@@ -44,19 +45,35 @@ export default function Budget() {
   const [newLumpAmount, setNewLumpAmount] = useState("");
   const [newLumpTarget, setNewLumpTarget] = useState("");
 
-  const { data: existingBudget } = useQuery({
+  const { data: existingBudget } = useQuery<Budget>({
     queryKey: ["/api/budget"],
   });
 
-  const { data: accounts } = useQuery({
+  const { data: accounts } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
   });
 
   useEffect(() => {
     if (existingBudget) {
       setMonthlyBudget((existingBudget.monthlyBudgetCents / 100).toString());
-      setFutureChanges(existingBudget.futureChanges || []);
-      setLumpSumPayments(existingBudget.lumpSumPayments || []);
+      
+      // Transform tuple arrays to objects
+      const transformedFutureChanges = (existingBudget.futureChanges || []).map(
+        ([effectiveDate, newMonthlyBudgetCents]: [string, number]) => ({
+          effectiveDate,
+          newMonthlyBudgetCents,
+        })
+      );
+      setFutureChanges(transformedFutureChanges);
+      
+      const transformedLumpSums = (existingBudget.lumpSumPayments || []).map(
+        ([paymentDate, amountCents]: [string, number]) => ({
+          paymentDate,
+          amountCents,
+          targetLenderName: null,
+        })
+      );
+      setLumpSumPayments(transformedLumpSums);
     }
   }, [existingBudget]);
 

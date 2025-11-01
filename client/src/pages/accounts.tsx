@@ -62,16 +62,6 @@ export default function Accounts() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-medium text-muted-foreground">{accounts.length} Accounts</p>
-                  {accounts.length >= 1 && (
-                    <Button
-                      onClick={() => setLocation("/budget")}
-                      className="mt-2"
-                      data-testid="button-continue-budget"
-                    >
-                      Continue to Budget
-                      <TrendingDown className="ml-2 h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
               </div>
             </CardContent>
@@ -137,6 +127,21 @@ export default function Accounts() {
         open={isAddDialogOpen}
         onOpenChange={setIsAddDialogOpen}
       />
+
+      {accounts.length > 0 && (
+        <div className="sticky bottom-0 left-0 right-0 bg-background border-t p-4 z-50">
+          <div className="container mx-auto max-w-7xl">
+            <Button
+              onClick={() => setLocation("/budget")}
+              className="w-full h-12"
+              data-testid="button-continue-budget"
+            >
+              Add Budget
+              <TrendingDown className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

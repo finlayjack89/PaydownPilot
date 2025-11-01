@@ -1,4 +1,4 @@
-import { Home, CreditCard, CircleDollarSign, Sliders, TrendingUp, BarChart3, LogOut } from "lucide-react";
+import { Home, CreditCard, BarChart3, LogOut } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -15,12 +15,9 @@ import {
 } from "@/components/ui/sidebar";
 
 const navItems = [
-  { href: "/", icon: Home, label: "Dashboard" },
-  { href: "/accounts", icon: CreditCard, label: "Accounts" },
-  { href: "/budget", icon: CircleDollarSign, label: "Budget" },
-  { href: "/preferences", icon: Sliders, label: "Preferences" },
-  { href: "/generate", icon: TrendingUp, label: "Generate Plan" },
-  { href: "/plan", icon: BarChart3, label: "Plan Details" },
+  { href: "/", icon: Home, label: "Dashboard", testId: "link-dashboard" },
+  { href: "/accounts", icon: CreditCard, label: "Accounts", testId: "link-accounts" },
+  { href: "/plan", icon: BarChart3, label: "Plan Details", testId: "link-plan-details" },
 ];
 
 export function AppSidebar() {
@@ -48,7 +45,7 @@ export function AppSidebar() {
                   <SidebarMenuButton 
                     asChild 
                     isActive={location === item.href}
-                    data-testid={`link-${item.label.toLowerCase().replace(/ /g, '-')}`}
+                    data-testid={item.testId}
                   >
                     <Link href={item.href}>
                       <item.icon />
