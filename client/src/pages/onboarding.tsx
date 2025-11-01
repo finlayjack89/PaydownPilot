@@ -11,19 +11,12 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { countries } from "@/lib/countries";
 
 const steps = [
   { id: 1, name: "Profile", description: "Basic information" },
   { id: 2, name: "Location", description: "Country & currency" },
   { id: 3, name: "Complete", description: "All set!" },
-];
-
-const countries = [
-  { code: "US", name: "United States", currency: "USD", regions: ["Select state..."] },
-  { code: "GB", name: "United Kingdom", currency: "GBP", regions: ["England", "Scotland", "Wales", "Northern Ireland"] },
-  { code: "CA", name: "Canada", currency: "CAD", regions: ["Select province..."] },
-  { code: "AU", name: "Australia", currency: "AUD", regions: ["Select state..."] },
-  { code: "EU", name: "European Union", currency: "EUR", regions: ["Select country..."] },
 ];
 
 export default function Onboarding() {
