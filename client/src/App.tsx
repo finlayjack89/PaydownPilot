@@ -35,21 +35,42 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return user ? <Component /> : <Redirect to="/login" />;
 }
 
-function Router() {
+function HomeRoute() {
   const { user, isLoading } = useAuth();
   
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+  
+  return user ? <HomePageWrapper /> : <Redirect to="/login" />;
+}
+
+function GenerateRoute() {
+  const { user, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center" data-testid="loading-generate">
+        <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+  
+  return user ? <Generate /> : <Redirect to="/login" />;
+}
+
+function DashboardRedirect() {
+  return <Redirect to="/" />;
+}
+
+function Router() {
   return (
     <Switch>
-      <Route path="/" component={() => {
-        if (isLoading) {
-          return (
-            <div className="flex min-h-screen items-center justify-center">
-              <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
-            </div>
-          );
-        }
-        return user ? <ProtectedRoute component={HomePageWrapper} /> : <Redirect to="/login" />;
-      }} />
+      <Route path="/" component={HomeRoute} />
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/onboarding"><ProtectedRoute component={Onboarding} /></Route>
@@ -57,18 +78,9 @@ function Router() {
       <Route path="/accounts/:id"><ProtectedRoute component={AccountDetail} /></Route>
       <Route path="/budget"><ProtectedRoute component={Budget} /></Route>
       <Route path="/preferences"><ProtectedRoute component={Preferences} /></Route>
-      <Route path="/generate" component={() => {
-        if (isLoading) {
-          return (
-            <div className="flex min-h-screen items-center justify-center" data-testid="loading-generate">
-              <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
-            </div>
-          );
-        }
-        return user ? <Generate /> : <Redirect to="/login" />;
-      }} />
+      <Route path="/generate" component={GenerateRoute} />
       <Route path="/plan"><ProtectedRoute component={PlanOverview} /></Route>
-      <Route path="/dashboard" component={() => <Redirect to="/" />} />
+      <Route path="/dashboard" component={DashboardRedirect} />
       <Route component={NotFound} />
     </Switch>
   );
