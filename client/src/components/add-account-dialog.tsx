@@ -355,8 +355,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
               !balance || 
               !apr || 
               !dueDay || 
-              !fixedAmount || 
-              !percentage
+              (!fixedAmount && !percentage)
             }
             data-testid="button-save-account"
           >
