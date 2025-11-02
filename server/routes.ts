@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { setupAuth, requireAuth, hashPassword } from "./auth";
 import { discoverLenderRule, generatePlanExplanation, answerPlanQuestion } from "./anthropic";
 import { 
-  insertUserSchema, insertAccountSchema, insertBudgetSchema, 
+  insertUserSchema, updateUserProfileSchema, insertAccountSchema, insertBudgetSchema, 
   insertPreferenceSchema, type InsertAccount, type InsertBudget
 } from "@shared/schema";
 import { randomUUID } from "crypto";
@@ -158,14 +158,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/auth/guest", (req, res) => {
-    // Create a guest user session
+    // Create a guest user session with empty location data to force onboarding
     const guestUser = {
       id: "guest-user",
       email: "guest@example.com",
       name: "Guest User",
-      country: "US",
+      country: null,
       region: null,
-      currency: "USD",
+      currency: null,
       createdAt: new Date(),
     };
     
@@ -183,6 +183,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     const { password: _, ...userWithoutPassword } = req.user as any;
     res.json(userWithoutPassword);
+  });
+
+  // ==================== User Profile Routes ====================
+  app.patch("/api/user/profile", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const validatedData = updateUserProfileSchema.parse(req.body);
+      
+      // Handle guest user specially (update session, not database)
+      if (userId === "guest-user") {
+        const updatedGuestUser = { ...req.user, ...validatedData };
+        
+        // Use Promise wrapper for req.login
+        await new Promise((resolve, reject) => {
+          req.login(updatedGuestUser, (err) => {
+            if (err) reject(err);
+            else resolve(undefined);
+          });
+        });
+        
+        const { password: _, ...userWithoutPassword } = updatedGuestUser as any;
+        return res.json(userWithoutPassword);
+      }
+      
+      // Regular user - update database
+      const updatedUser = await storage.updateUser(userId, validatedData);
+      
+      if (!updatedUser) {
+        return res.status(404).send({ message: "User not found" });
+      }
+
+      // Update session with latest data
+      await new Promise((resolve, reject) => {
+        req.login(updatedUser, (err) => {
+          if (err) reject(err);
+          else resolve(undefined);
+        });
+      });
+      
+      const { password: _, ...userWithoutPassword } = updatedUser as any;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      console.error("Profile update error:", error);
+      res.status(400).send({ message: error.message || "Failed to update profile" });
+    }
   });
 
   // ==================== Account Routes ====================

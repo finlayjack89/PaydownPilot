@@ -208,6 +208,13 @@ export const insertUserSchema = createInsertSchema(users, {
   currency: true,
 });
 
+export const updateUserProfileSchema = z.object({
+  name: z.string().optional(),
+  country: z.string().optional(),
+  region: z.string().optional(),
+  currency: z.string().optional(),
+});
+
 export const insertAccountSchema = createInsertSchema(accounts, {
   currentBalanceCents: z.number().int().min(0),
   aprStandardBps: z.number().int().min(0),
