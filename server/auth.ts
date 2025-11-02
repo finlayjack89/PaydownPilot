@@ -2,14 +2,15 @@ import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import type { User } from "@shared/schema";
+import { pool } from "./db";
 
 const scryptAsync = promisify(scrypt);
-const MemoryStore = createMemoryStore(session);
+const PgSessionStore = connectPgSimple(session);
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -30,6 +31,14 @@ export async function comparePasswords(
 export function setupAuth(app: Express) {
   const isProduction = process.env.NODE_ENV === "production";
   
+  // Create the session table if it doesn't exist
+  const pgStore = new PgSessionStore({
+    pool: pool as any, // Use the existing database pool
+    tableName: 'session', // Table will be auto-created
+    createTableIfMissing: true,
+    ttl: 60 * 60, // 1 hour TTL to match cookie maxAge
+  });
+  
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "paydown-pilot-secret-key",
     resave: false,
@@ -40,9 +49,7 @@ export function setupAuth(app: Express) {
       secure: isProduction, // Secure cookies in production only
       sameSite: isProduction ? "none" : "lax", // 'none' for cross-site in prod, 'lax' for dev
     },
-    store: new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    }),
+    store: pgStore,
   };
 
   // Enable trust proxy for Replit deployment (required for secure cookies behind proxy)
@@ -85,16 +92,35 @@ export function setupAuth(app: Express) {
 
   passport.deserializeUser(async (idOrUser: string | any, done) => {
     try {
+      // Add logging to diagnose deserialization issues
+      console.log("[deserializeUser] Input type:", typeof idOrUser, "Value:", 
+        typeof idOrUser === "object" ? JSON.stringify(idOrUser) : idOrUser);
+      
       // If it's a guest user object, return it directly
       if (typeof idOrUser === "object" && idOrUser.id === "guest-user") {
+        console.log("[deserializeUser] Returning guest user");
         return done(null, idOrUser);
       }
       
       // If it's a string ID, fetch from database
-      const id = typeof idOrUser === "string" ? idOrUser : idOrUser.id;
+      const id = typeof idOrUser === "string" ? idOrUser : idOrUser?.id;
+      
+      if (!id) {
+        console.error("[deserializeUser] No valid ID found in:", idOrUser);
+        return done(null, false);
+      }
+      
       const user = await storage.getUser(id);
+      
+      if (!user) {
+        console.error("[deserializeUser] User not found for ID:", id);
+        return done(null, false);
+      }
+      
+      console.log("[deserializeUser] Successfully deserialized user:", user.email);
       done(null, user);
     } catch (err) {
+      console.error("[deserializeUser] Error during deserialization:", err);
       done(err);
     }
   });
