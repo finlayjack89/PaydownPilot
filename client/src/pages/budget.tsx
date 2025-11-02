@@ -45,7 +45,7 @@ export default function Budget() {
   const [newLumpAmount, setNewLumpAmount] = useState("");
   const [newLumpTarget, setNewLumpTarget] = useState("");
 
-  const { data: existingBudget } = useQuery<Budget>({
+  const { data: existingBudget, isError: budgetError, error: budgetErrorData } = useQuery<Budget>({
     queryKey: ["/api/budget"],
   });
 
@@ -53,29 +53,35 @@ export default function Budget() {
     queryKey: ["/api/accounts"],
   });
 
+  // Handle 404 as "no budget yet" rather than an error
+  const hasBudget = existingBudget && !budgetError;
+
   useEffect(() => {
-    if (existingBudget) {
+    if (existingBudget && !budgetError) {
       setMonthlyBudget((existingBudget.monthlyBudgetCents / 100).toString());
       
-      // Transform tuple arrays to objects
-      const transformedFutureChanges = (existingBudget.futureChanges || []).map(
-        ([effectiveDate, newMonthlyBudgetCents]: [string, number]) => ({
-          effectiveDate,
-          newMonthlyBudgetCents,
-        })
-      );
+      // Transform tuple arrays to objects, handle both tuple and object formats
+      const transformedFutureChanges = (existingBudget.futureChanges || []).map((item: any) => {
+        // Handle both tuple [date, amount] and object {effectiveDate, newMonthlyBudgetCents} formats
+        if (Array.isArray(item)) {
+          const [effectiveDate, newMonthlyBudgetCents] = item;
+          return { effectiveDate, newMonthlyBudgetCents };
+        }
+        return item;
+      });
       setFutureChanges(transformedFutureChanges);
       
-      const transformedLumpSums = (existingBudget.lumpSumPayments || []).map(
-        ([paymentDate, amountCents]: [string, number]) => ({
-          paymentDate,
-          amountCents,
-          targetLenderName: null,
-        })
-      );
+      const transformedLumpSums = (existingBudget.lumpSumPayments || []).map((item: any) => {
+        // Handle both tuple [date, amount] and object {paymentDate, amountCents, targetLenderName} formats
+        if (Array.isArray(item)) {
+          const [paymentDate, amountCents] = item;
+          return { paymentDate, amountCents, targetLenderName: null };
+        }
+        return item;
+      });
       setLumpSumPayments(transformedLumpSums);
     }
-  }, [existingBudget]);
+  }, [existingBudget, budgetError]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -222,10 +228,18 @@ export default function Budget() {
       return;
     }
 
+    // Convert objects to tuples for the API
+    const futureChangesAsTuples = futureChanges.map(
+      (change) => [change.effectiveDate, change.newMonthlyBudgetCents] as [string, number]
+    );
+    const lumpSumsAsTuples = lumpSumPayments.map(
+      (payment) => [payment.paymentDate, payment.amountCents] as [string, number]
+    );
+
     saveMutation.mutate({
       monthlyBudgetCents: parseCurrencyToCents(monthlyBudget),
-      futureChanges,
-      lumpSumPayments,
+      futureChanges: futureChangesAsTuples,
+      lumpSumPayments: lumpSumsAsTuples,
     });
   };
 

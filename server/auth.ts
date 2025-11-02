@@ -35,7 +35,7 @@ export function setupAuth(app: Express) {
     resave: false,
     saveUninitialized: false,
     cookie: {
-      maxAge: 30 * 60 * 1000, // 30 minutes
+      maxAge: 60 * 60 * 1000, // 1 hour
       httpOnly: true,
       secure: isProduction, // Secure cookies in production only
       sameSite: isProduction ? "none" : "lax", // 'none' for cross-site in prod, 'lax' for dev
