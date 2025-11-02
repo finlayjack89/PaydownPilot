@@ -312,12 +312,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ==================== Budget Routes ====================
-  // Helper function to sanitize budget data - filters out invalid tuples with null values
+  // Helper function to sanitize budget data - ensures arrays and filters out invalid tuples
   const sanitizeBudgetData = (data: any) => {
     const sanitized = { ...data };
     
-    // Filter futureChanges to remove any tuples with null/undefined values
-    if (Array.isArray(sanitized.futureChanges)) {
+    // Ensure futureChanges is always an array before filtering
+    if (!Array.isArray(sanitized.futureChanges)) {
+      console.log('[sanitizeBudgetData] futureChanges was not an array, resetting to []:', typeof sanitized.futureChanges);
+      sanitized.futureChanges = [];
+    } else {
+      // Filter futureChanges to remove any tuples with null/undefined values
       sanitized.futureChanges = sanitized.futureChanges.filter((item: any) => {
         if (!Array.isArray(item) || item.length !== 2) return false;
         const [date, amount] = item;
@@ -325,8 +329,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
     
-    // Filter lumpSumPayments to remove any tuples with null/undefined values
-    if (Array.isArray(sanitized.lumpSumPayments)) {
+    // Ensure lumpSumPayments is always an array before filtering
+    if (!Array.isArray(sanitized.lumpSumPayments)) {
+      console.log('[sanitizeBudgetData] lumpSumPayments was not an array, resetting to []:', typeof sanitized.lumpSumPayments);
+      sanitized.lumpSumPayments = [];
+    } else {
+      // Filter lumpSumPayments to remove any tuples with null/undefined values
       sanitized.lumpSumPayments = sanitized.lumpSumPayments.filter((item: any) => {
         if (!Array.isArray(item) || item.length !== 2) return false;
         const [date, amount] = item;
@@ -496,16 +504,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         budget: {
           monthly_budget_cents: budget.monthlyBudgetCents,
           // Python expects List[Tuple[date, int]] - arrays of 2-element arrays
-          future_changes: (budget.futureChanges || []).map((change: any) => [
-            change.effectiveDate,
-            change.newMonthlyBudgetCents
-          ]),
+          // futureChanges is ALREADY in the correct format: [["2026-05-05", 75000]]
+          // No mapping needed - just pass it through!
+          future_changes: budget.futureChanges || [],
           // Python expects List[Tuple[date, int]] - arrays of 2-element arrays
+          // lumpSumPayments is ALREADY in the correct format: [["2026-05-05", 10000]]
           // Note: targetLenderName is ignored for now (not supported by solver)
-          lump_sum_payments: (budget.lumpSumPayments || []).map((payment: any) => [
-            payment.paymentDate,
-            payment.amountCents
-          ]),
+          lump_sum_payments: budget.lumpSumPayments || [],
         },
         preferences: {
           strategy: mapStrategyToPython(preferences.strategy),
