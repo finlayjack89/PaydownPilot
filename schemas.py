@@ -73,18 +73,25 @@ class Budget(BaseModel):
     def check_amounts_valid(cls, v: List[Tuple[date, int]]):
         """Validate budget change and lump sum payment tuples."""
         if v: # Check only if the list is not empty
-            for item in v:
+            for i, item in enumerate(v):
                 # Ensure item is a tuple/list of expected length before indexing
                 if not isinstance(item, (tuple, list)) or len(item) != 2:
-                     raise ValueError("Budget changes/lump sums must be tuples of (date, amount).")
+                     raise ValueError(f"Item {i+1}: Budget changes and lump sums must be in format [date, amount]. Got: {type(item).__name__}")
                 dt, amount = item
+                
+                # Validate date
+                if dt is None:
+                    raise ValueError(f"Item {i+1}: Date cannot be empty or null.")
+                
                 # Amount must be a positive integer (in cents)
-                # Note: This is the NEW budget amount or lump sum amount, not a change delta
-                # Users can set ANY positive budget value - lower OR higher than current
-                if amount is None or not isinstance(amount, int):
-                    raise ValueError(f"Amount must be an integer (in cents), got: {amount}")
+                # Note: This is the NEW absolute budget amount or lump sum amount, not a change delta
+                # For budget reductions, enter the new lower amount (e.g., $300, not -$200)
+                if amount is None:
+                    raise ValueError(f"Item {i+1}: Amount cannot be empty or null. Enter the new budget amount as a positive number.")
+                if not isinstance(amount, int):
+                    raise ValueError(f"Item {i+1}: Amount must be an integer in cents (multiply dollars by 100). Got type: {type(amount).__name__}, value: {amount}")
                 if amount <= 0:
-                    raise ValueError(f"Amount must be positive (greater than zero), got: {amount}")
+                    raise ValueError(f"Item {i+1}: Amount must be positive. For budget reductions, enter the new lower budget amount (e.g., 30000 for $300), not a negative change. Got: {amount}")
         return v
 
 class UserPreferences(BaseModel):

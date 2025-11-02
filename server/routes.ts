@@ -117,13 +117,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: hashedPassword,
       });
 
-      // Auto-login
+      // Auto-login after signup
       req.login(user, (err) => {
         if (err) {
           return next(err);
         }
-        const { password: _, ...userWithoutPassword } = user;
-        res.json(userWithoutPassword);
+        // Explicitly save session to ensure it persists on first login attempt
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            return next(saveErr);
+          }
+          const { password: _, ...userWithoutPassword } = user;
+          res.json(userWithoutPassword);
+        });
       });
     } catch (error: any) {
       res.status(400).send({ message: error.message || "Signup failed" });
@@ -142,8 +148,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (err) {
           return next(err);
         }
-        const { password: _, ...userWithoutPassword } = user;
-        res.json(userWithoutPassword);
+        // Explicitly save session to ensure it persists on first login attempt
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            return next(saveErr);
+          }
+          const { password: _, ...userWithoutPassword } = user;
+          res.json(userWithoutPassword);
+        });
       });
     })(req, res, next);
   });
@@ -157,7 +169,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.post("/api/auth/guest", (req, res) => {
+  app.post("/api/auth/guest", (req, res, next) => {
     // Create a guest user session with empty location data to force onboarding
     const guestUser = {
       id: "guest-user",
@@ -173,7 +185,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (err) {
         return res.status(500).send({ message: "Guest login failed" });
       }
-      res.json(guestUser);
+      // Explicitly save session to ensure it persists
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          return next(saveErr);
+        }
+        res.json(guestUser);
+      });
     });
   });
 
@@ -294,6 +312,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ==================== Budget Routes ====================
+  // Helper function to sanitize budget data - filters out invalid tuples with null values
+  const sanitizeBudgetData = (data: any) => {
+    const sanitized = { ...data };
+    
+    // Filter futureChanges to remove any tuples with null/undefined values
+    if (Array.isArray(sanitized.futureChanges)) {
+      sanitized.futureChanges = sanitized.futureChanges.filter((item: any) => {
+        if (!Array.isArray(item) || item.length !== 2) return false;
+        const [date, amount] = item;
+        return date != null && amount != null && typeof amount === 'number' && amount > 0;
+      });
+    }
+    
+    // Filter lumpSumPayments to remove any tuples with null/undefined values
+    if (Array.isArray(sanitized.lumpSumPayments)) {
+      sanitized.lumpSumPayments = sanitized.lumpSumPayments.filter((item: any) => {
+        if (!Array.isArray(item) || item.length !== 2) return false;
+        const [date, amount] = item;
+        return date != null && amount != null && typeof amount === 'number' && amount > 0;
+      });
+    }
+    
+    return sanitized;
+  };
+
   app.get("/api/budget", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
@@ -301,7 +344,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!budget) {
         return res.status(404).send({ message: "Budget not found" });
       }
-      res.json(budget);
+      // Sanitize before sending to prevent corrupted data from causing frontend issues
+      res.json(sanitizeBudgetData(budget));
     } catch (error: any) {
       res.status(500).send({ message: error.message || "Failed to fetch budget" });
     }
@@ -312,12 +356,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req.user as any).id;
       const validatedData = insertBudgetSchema.parse(req.body);
       
+      // Sanitize data before storing to filter out any null/invalid entries
+      const sanitizedData = sanitizeBudgetData(validatedData);
+      
       const budget = await storage.createOrUpdateBudget({
-        ...validatedData,
+        ...sanitizedData,
         userId,
       } as InsertBudget);
 
-      res.json(budget);
+      res.json(sanitizeBudgetData(budget));
     } catch (error: any) {
       res.status(400).send({ message: error.message || "Failed to save budget" });
     }
@@ -334,13 +381,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send({ message: "Budget not found" });
       }
 
-      const budget = await storage.createOrUpdateBudget({
+      // Sanitize merged data before storing
+      const mergedData = {
         ...existing,
         ...validatedData,
         userId,
-      } as InsertBudget);
+      };
+      const sanitizedData = sanitizeBudgetData(mergedData);
 
-      res.json(budget);
+      const budget = await storage.createOrUpdateBudget(sanitizedData as InsertBudget);
+
+      res.json(sanitizeBudgetData(budget));
     } catch (error: any) {
       res.status(400).send({ message: error.message || "Failed to update budget" });
     }

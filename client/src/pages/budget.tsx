@@ -323,6 +323,17 @@ export default function Budget() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                <div className="rounded-lg bg-muted p-4 space-y-2">
+                  <h4 className="font-medium text-sm">How it works</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Enter the <strong>new absolute budget amount</strong> that will be available starting on the effective date.
+                  </p>
+                  <ul className="text-xs text-muted-foreground space-y-1 ml-4">
+                    <li>• <strong>Increase:</strong> If your current budget is $500 and you get a raise, enter the new amount like $700</li>
+                    <li>• <strong>Decrease:</strong> If your current budget is $500 but will drop to $300, enter $300 (not -$200)</li>
+                  </ul>
+                </div>
+
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="changeDate">Effective Date</Label>
@@ -336,7 +347,10 @@ export default function Budget() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="changeAmount">New Monthly Budget</Label>
+                    <Label htmlFor="changeAmount">
+                      New Monthly Budget
+                      <span className="text-xs text-muted-foreground font-normal ml-1">(absolute amount)</span>
+                    </Label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">
                         {currencySymbol}
@@ -351,6 +365,9 @@ export default function Budget() {
                         data-testid="input-future-change-amount"
                       />
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      Enter what your budget will be, not the change amount
+                    </p>
                   </div>
                   <div className="flex items-end">
                     <Button
