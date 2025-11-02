@@ -70,16 +70,21 @@ class Budget(BaseModel):
 
     @field_validator('future_changes', 'lump_sum_payments', mode='before')
     @classmethod
-    def check_amounts_non_negative(cls, v: List[Tuple[date, int]]):
-        """Validate that amounts in budget change/lump sum tuples are non-negative."""
+    def check_amounts_valid(cls, v: List[Tuple[date, int]]):
+        """Validate budget change and lump sum payment tuples."""
         if v: # Check only if the list is not empty
             for item in v:
                 # Ensure item is a tuple/list of expected length before indexing
                 if not isinstance(item, (tuple, list)) or len(item) != 2:
                      raise ValueError("Budget changes/lump sums must be tuples of (date, amount).")
                 dt, amount = item
-                if not isinstance(amount, int) or amount < 0:
-                    raise ValueError("Budget change and lump sum amounts cannot be negative.")
+                # Amount must be a positive integer (in cents)
+                # Note: This is the NEW budget amount or lump sum amount, not a change delta
+                # Users can set ANY positive budget value - lower OR higher than current
+                if amount is None or not isinstance(amount, int):
+                    raise ValueError(f"Amount must be an integer (in cents), got: {amount}")
+                if amount <= 0:
+                    raise ValueError(f"Amount must be positive (greater than zero), got: {amount}")
         return v
 
 class UserPreferences(BaseModel):

@@ -17,12 +17,17 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
+    // Get values directly from form to handle browser autofill
+    const formData = new FormData(e.currentTarget);
+    const formEmail = formData.get("email") as string;
+    const formPassword = formData.get("password") as string;
+
     try {
-      await login(email, password);
+      await login(formEmail || email, formPassword || password);
       setLocation("/dashboard");
     } catch (error) {
       toast({
@@ -70,6 +75,7 @@ export default function Login() {
               </Label>
               <Input
                 id="email"
+                name="email"
                 type="email"
                 placeholder="you@example.com"
                 value={email}
@@ -78,6 +84,7 @@ export default function Login() {
                 disabled={isLoading}
                 data-testid="input-email"
                 className="h-12"
+                autoComplete="email"
               />
             </div>
             <div className="space-y-2">
@@ -86,6 +93,7 @@ export default function Login() {
               </Label>
               <Input
                 id="password"
+                name="password"
                 type="password"
                 placeholder="••••••••"
                 value={password}
@@ -94,6 +102,7 @@ export default function Login() {
                 disabled={isLoading}
                 data-testid="input-password"
                 className="h-12"
+                autoComplete="current-password"
               />
             </div>
           </CardContent>

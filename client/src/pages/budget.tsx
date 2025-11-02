@@ -229,11 +229,11 @@ export default function Budget() {
     }
 
     // Convert objects to tuples for the API
-    const futureChangesAsTuples = futureChanges.map(
-      (change) => [change.effectiveDate, change.newMonthlyBudgetCents] as [string, number]
+    const futureChangesAsTuples = futureChanges.map((change) => 
+      [change.effectiveDate, change.newMonthlyBudgetCents] as [string, number]
     );
-    const lumpSumsAsTuples = lumpSumPayments.map(
-      (payment) => [payment.paymentDate, payment.amountCents] as [string, number]
+    const lumpSumsAsTuples = lumpSumPayments.map((payment) => 
+      [payment.paymentDate, payment.amountCents] as [string, number]
     );
 
     saveMutation.mutate({
