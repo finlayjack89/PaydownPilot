@@ -27,19 +27,22 @@ export default function Onboarding() {
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   
-  // Form state
-  const [country, setCountry] = useState(user?.country || "");
-  const [region, setRegion] = useState(user?.region || "");
-  const [currency, setCurrency] = useState(user?.currency || "USD");
+  // Form state - initialize only once on mount
+  const [country, setCountry] = useState(() => user?.country || "");
+  const [region, setRegion] = useState(() => user?.region || "");
+  const [currency, setCurrency] = useState(() => user?.currency || "");
   const [countryOpen, setCountryOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
 
   const selectedCountry = countries.find(c => c.code === country);
 
   const handleNext = async () => {
+    console.log("[Onboarding] handleNext called, currentStep:", currentStep);
+    
     if (currentStep === 2) {
       // Validate location selection
       if (!country || !region || !currency) {
+        console.log("[Onboarding] Validation failed:", { country, region, currency });
         toast({
           title: "Missing information",
           description: "Please select your country, region, and currency",
@@ -50,6 +53,7 @@ export default function Onboarding() {
 
       // Save location data
       try {
+        console.log("[Onboarding] Saving profile:", { country, region, currency });
         const response = await fetch("/api/user/profile", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -58,10 +62,16 @@ export default function Onboarding() {
         });
 
         if (!response.ok) throw new Error("Failed to update profile");
+        
+        const updatedUser = await response.json();
+        console.log("[Onboarding] Profile saved successfully:", updatedUser);
 
         updateUser({ country, region, currency });
+        console.log("[Onboarding] Updated auth context, setting step to 3");
         setCurrentStep(3);
+        console.log("[Onboarding] Step should now be 3");
       } catch (error) {
+        console.error("[Onboarding] Error saving profile:", error);
         toast({
           title: "Error",
           description: "Failed to save your information. Please try again.",
@@ -70,8 +80,10 @@ export default function Onboarding() {
       }
     } else if (currentStep === 3) {
       // Complete onboarding
+      console.log("[Onboarding] Completing onboarding, navigating to /accounts");
       setLocation("/accounts");
     } else {
+      console.log("[Onboarding] Advancing from step", currentStep, "to", currentStep + 1);
       setCurrentStep(currentStep + 1);
     }
   };

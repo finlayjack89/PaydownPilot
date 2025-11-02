@@ -74,25 +74,24 @@ export function setupAuth(app: Express) {
   );
 
   passport.serializeUser((user: any, done) => {
-    done(null, user.id);
+    // For guest users, serialize the entire user object
+    // For regular users, just serialize the ID
+    if (user.id === "guest-user") {
+      done(null, user);
+    } else {
+      done(null, user.id);
+    }
   });
 
-  passport.deserializeUser(async (id: string, done) => {
+  passport.deserializeUser(async (idOrUser: string | any, done) => {
     try {
-      // Handle guest user specially
-      if (id === "guest-user") {
-        const guestUser = {
-          id: "guest-user",
-          email: "guest@example.com",
-          name: "Guest User",
-          country: "US",
-          region: null,
-          currency: "USD",
-          createdAt: new Date(),
-        };
-        return done(null, guestUser);
+      // If it's a guest user object, return it directly
+      if (typeof idOrUser === "object" && idOrUser.id === "guest-user") {
+        return done(null, idOrUser);
       }
       
+      // If it's a string ID, fetch from database
+      const id = typeof idOrUser === "string" ? idOrUser : idOrUser.id;
       const user = await storage.getUser(id);
       done(null, user);
     } catch (err) {

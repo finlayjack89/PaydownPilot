@@ -21,7 +21,7 @@ import PlanOverview from "@/pages/plan-overview";
 import AccountDetail from "@/pages/account-detail";
 import { type ReactNode } from "react";
 
-function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
+function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
   
   if (isLoading) {
@@ -52,11 +52,11 @@ function Router() {
       }} />
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
-      <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
-      <Route path="/accounts" component={() => <ProtectedRoute component={Accounts} />} />
-      <Route path="/accounts/:id" component={() => <ProtectedRoute component={AccountDetail} />} />
-      <Route path="/budget" component={() => <ProtectedRoute component={Budget} />} />
-      <Route path="/preferences" component={() => <ProtectedRoute component={Preferences} />} />
+      <Route path="/onboarding"><ProtectedRoute component={Onboarding} /></Route>
+      <Route path="/accounts"><ProtectedRoute component={Accounts} /></Route>
+      <Route path="/accounts/:id"><ProtectedRoute component={AccountDetail} /></Route>
+      <Route path="/budget"><ProtectedRoute component={Budget} /></Route>
+      <Route path="/preferences"><ProtectedRoute component={Preferences} /></Route>
       <Route path="/generate" component={() => {
         if (isLoading) {
           return (
@@ -67,7 +67,7 @@ function Router() {
         }
         return user ? <Generate /> : <Redirect to="/login" />;
       }} />
-      <Route path="/plan" component={() => <ProtectedRoute component={PlanOverview} />} />
+      <Route path="/plan"><ProtectedRoute component={PlanOverview} /></Route>
       <Route path="/dashboard" component={() => <Redirect to="/" />} />
       <Route component={NotFound} />
     </Switch>
