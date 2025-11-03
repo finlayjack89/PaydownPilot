@@ -436,52 +436,9 @@ export default function Dashboard() {
               </Button>
               <Button 
                 variant="outline"
-                onClick={async () => {
-                  if (!originalBudget || !budget) return;
-                  
-                  // Reset to original budget
-                  await apiRequest("PATCH", "/api/budget", {
-                    monthlyBudgetCents: originalBudget,
-                  });
-                  
-                  // Re-generate plan with original budget
-                  const planRequest = {
-                    accounts: accounts.map((acc: any) => ({
-                      lenderName: acc.lenderName,
-                      accountType: acc.accountType,
-                      currentBalanceCents: acc.currentBalanceCents,
-                      aprStandardBps: acc.aprStandardBps,
-                      paymentDueDay: acc.paymentDueDay,
-                      minPaymentRuleFixedCents: acc.minPaymentRuleFixedCents,
-                      minPaymentRulePercentageBps: acc.minPaymentRulePercentageBps,
-                      minPaymentRuleIncludesInterest: acc.minPaymentRuleIncludesInterest,
-                      promoEndDate: acc.promoEndDate,
-                      promoDurationMonths: acc.promoDurationMonths,
-                      accountOpenDate: acc.accountOpenDate,
-                      notes: acc.notes,
-                    })),
-                    budget: {
-                      monthlyBudgetCents: originalBudget,
-                      futureChanges: budget.futureChanges || [],
-                      lumpSumPayments: budget.lumpSumPayments || [],
-                    },
-                    preferences: {
-                      strategy: preferences?.strategy || "minimize_interest",
-                      paymentShape: preferences?.paymentShape || "standard",
-                    },
-                    planStartDate: new Date().toISOString().split('T')[0],
-                  };
-                  
-                  await apiRequest("POST", "/api/plans/generate", planRequest);
-                  
-                  queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
-                  queryClient.invalidateQueries({ queryKey: ["/api/budget"] });
-                  refetch();
-                  
-                  toast({
-                    title: "Budget reset!",
-                    description: "Your plan has been restored to the original budget.",
-                  });
+                onClick={() => {
+                  if (!originalBudget) return;
+                  reOptimizeMutation.mutate(originalBudget);
                 }}
                 disabled={reOptimizeMutation.isPending || !originalBudget || budget?.monthlyBudgetCents === originalBudget}
                 data-testid="button-reset-budget"

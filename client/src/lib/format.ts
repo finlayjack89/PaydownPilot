@@ -1,6 +1,6 @@
 // Utility functions for formatting currency and numbers
 
-export function formatCurrency(cents: number, currency: string = "USD"): string {
+export function formatCurrency(cents: number, currency?: string | null): string {
   const amount = cents / 100;
   
   const currencySymbols: Record<string, string> = {
@@ -11,7 +11,9 @@ export function formatCurrency(cents: number, currency: string = "USD"): string 
     AUD: "AU$",
   };
 
-  const symbol = currencySymbols[currency] || currency + " ";
+  // Default to USD if currency is null/undefined
+  const safeCurrency = currency || "USD";
+  const symbol = currencySymbols[safeCurrency] || safeCurrency + " ";
   
   return `${symbol}${amount.toLocaleString("en-US", {
     minimumFractionDigits: 2,
