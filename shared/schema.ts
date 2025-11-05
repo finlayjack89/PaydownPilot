@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, date, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, date, jsonb, timestamp, boolean, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -92,6 +92,17 @@ export const lenderRules = pgTable("lender_rules", {
   includesInterest: boolean("includes_interest").default(false),
   ruleDescription: text("rule_description"),
   verifiedAt: timestamp("verified_at").defaultNow(),
+}, (table) => ({
+  lenderCountryUnique: unique().on(table.lenderName, table.country),
+}));
+
+export const plaidItems = pgTable("plaid_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  itemId: text("item_id").notNull().unique(),
+  accessTokenEncrypted: text("access_token_encrypted").notNull(),
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // TypeScript Types
@@ -112,6 +123,9 @@ export type InsertPlan = typeof plans.$inferInsert;
 
 export type LenderRule = typeof lenderRules.$inferSelect;
 export type InsertLenderRule = typeof lenderRules.$inferInsert;
+
+export type PlaidItem = typeof plaidItems.$inferSelect;
+export type InsertPlaidItem = typeof plaidItems.$inferInsert;
 
 // API Request/Response Types
 export interface MinPaymentRule {
@@ -193,6 +207,26 @@ export interface LenderRuleDiscoveryResponse {
   ruleDescription: string;
   minPaymentRule: MinPaymentRule;
   confidence: "high" | "medium" | "low";
+}
+
+export interface PlaidAccount {
+  accountId: string;
+  name: string;
+  balanceCents: number;
+  dueDay?: number;
+  apr?: number;
+}
+
+export interface PlaidLinkTokenResponse {
+  linkToken: string;
+}
+
+export interface PlaidExchangeRequest {
+  publicToken: string;
+}
+
+export interface PlaidExchangeResponse {
+  accounts: PlaidAccount[];
 }
 
 // Zod Schemas for Validation

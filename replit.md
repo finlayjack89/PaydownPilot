@@ -14,14 +14,17 @@ Preferred communication style: Simple, everyday language.
 - **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, and a dashboard with ECharts visualizations.
 
 ### Backend
-- **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication. Python backend (FastAPI) for the optimization engine.
-- **API Structure**: RESTful endpoints (`/api/auth`, `/api/accounts`, `/api/budget`, `/api/preferences`, `/api/plans`, `/api/lender-rules/discover`).
-- **Authentication & Security**: Scrypt password hashing, express-session management (30-minute timeout), MFA policy, email verification, secure credential storage.
+- **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication, Plaid SDK. Python backend (FastAPI) for the optimization engine.
+- **API Structure**: RESTful endpoints (`/api/auth`, `/api/accounts`, `/api/budget`, `/api/preferences`, `/api/plans`, `/api/plaid/*`, `/api/lender-rules/*`).
+- **Authentication & Security**: Scrypt password hashing, express-session management (30-minute timeout), AES-256-GCM encryption for Plaid tokens, secure credential storage.
+- **Plaid Integration**: Bank connection via Plaid Link, encrypted access token storage, liability account syncing.
+- **AI Research System**: Claude 4.5 Sonnet for automated lender rule discovery with human verification, intelligent caching of verified rules.
 
 ### Data Storage
 - **Database**: PostgreSQL (Neon serverless) with WebSocket support, Drizzle ORM.
-- **Schema Design**: `users`, `accounts`, `budgets`, `preferences`, `plans`, `lenderRules`.
-- **Key Data Patterns**: Monetary values in cents (integers), percentages in basis points (bps), JSONB for nested data, cascade deletes.
+- **Schema Design**: `users`, `accounts`, `budgets`, `preferences`, `plans`, `lenderRules`, `plaidItems`.
+- **Key Data Patterns**: Monetary values in cents (integers), percentages in basis points (bps), JSONB for nested data, cascade deletes, encrypted sensitive data (Plaid tokens).
+- **Security**: Plaid access tokens encrypted with AES-256-GCM using ENCRYPTION_SECRET environment variable.
 
 ### Python Backend Integration
 - **Setup**: FastAPI backend (`main.py`, `solver_engine.py`, `schemas.py`) runs as a child process of the Node.js server (port 8000).
@@ -29,7 +32,8 @@ Preferred communication style: Simple, everyday language.
 - **Reliability**: Includes health checks, retry logic with exponential backoff for plan generation, and auto-restart capability for crashed Python processes.
 
 ### Key Architectural Decisions
-- **Two-Brain Separation**: Divides financial calculation (deterministic Python solver) from AI assistance (Anthropic Claude) to ensure accuracy and intelligent user support.
+- **Two-Brain Separation**: Divides financial calculation (deterministic Python solver) from AI assistance (Anthropic Claude "Language Brain") to ensure accuracy and intelligent user support. The Math Brain receives only verified structured data; the Language Brain handles research and explanations only.
+- **Hybrid-Assisted Onboarding**: Combines Plaid automation (bank connections, balances, due dates) with AI research (minimum payment rules) and human verification to create a fast yet accurate onboarding flow.
 - **Monetary Precision**: All currency stored as cents and percentages as basis points to prevent floating-point errors.
 - **Session-Based Authentication**: Uses Passport.js with express-session for secure, time-sensitive authentication.
 - **Serverless Database**: Neon serverless PostgreSQL for scalability and reliability.
@@ -40,7 +44,10 @@ Preferred communication style: Simple, everyday language.
 ## External Dependencies
 
 **AI Services:**
-- Anthropic Claude Sonnet 4: Used for lender rule discovery and plan explanations. Not used for financial calculations.
+- Anthropic Claude Sonnet 4.5: Used for lender rule discovery (AI "Research Team") and plan explanations. Strictly forbidden from performing financial calculations per Two-Brain architecture.
+
+**Banking Integration:**
+- Plaid: Bank connection, account aggregation, liability data fetching. Supports US, GB, CA markets.
 
 **Optimization Engine:**
 - Google OR-Tools CP-SAT solver: Python implementation for deterministic mathematical debt optimization.
