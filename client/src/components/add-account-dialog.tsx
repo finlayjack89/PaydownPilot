@@ -97,6 +97,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
     setDiscoveredRule(null);
     setLinkToken(null);
     setIsLoadingPlaid(false);
+    setEntryMethod("selection");
   };
 
   const discoverRuleMutation = useMutation({
@@ -231,6 +232,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
           title: "Accounts Imported",
           description: `Successfully imported ${successCount} account${successCount > 1 ? 's' : ''} from Plaid.`,
         });
+        setEntryMethod("selection");
         onOpenChange(false);
         resetForm();
       } else {
@@ -239,11 +241,13 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
           description: "Failed to import accounts. Please add them manually.",
           variant: "destructive",
         });
+        setLinkToken(null);
         setEntryMethod("manual");
       }
     },
     onError: (error: any) => {
       setIsLoadingPlaid(false);
+      setLinkToken(null);
       toast({
         title: "Plaid Error",
         description: error.message || "Failed to fetch account data. Please try again.",
@@ -260,6 +264,8 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
       exchangeTokenMutation.mutate(publicToken);
     },
     onExit: (err) => {
+      setIsLoadingPlaid(false);
+      setLinkToken(null);
       if (err) {
         toast({
           title: "Plaid Connection Cancelled",
@@ -376,7 +382,11 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
         {!isLoadingPlaid && (
           <Button 
             variant="outline" 
-            onClick={() => setEntryMethod("selection")}
+            onClick={() => {
+              setIsLoadingPlaid(false);
+              setLinkToken(null);
+              setEntryMethod("selection");
+            }}
             data-testid="button-cancel-plaid"
           >
             Cancel
@@ -584,6 +594,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
                 variant="outline"
                 onClick={() => {
                   if (!isEditing) {
+                    setLinkToken(null);
                     setEntryMethod("selection");
                   } else {
                     onOpenChange(false);
