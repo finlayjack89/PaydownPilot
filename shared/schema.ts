@@ -32,6 +32,8 @@ export const users = pgTable("users", {
   country: text("country"),
   region: text("region"),
   currency: text("currency").default("USD"),
+  currentBudgetCents: integer("current_budget_cents"), // Find My Budget: analyzed current budget
+  potentialBudgetCents: integer("potential_budget_cents"), // Find My Budget: potential budget after savings
   createdAt: timestamp("created_at").defaultNow(),
 });
 
