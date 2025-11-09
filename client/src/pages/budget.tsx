@@ -303,13 +303,19 @@ export default function Budget() {
                   <div className="space-y-4">
                     <Alert className="border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/20">
                       <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      <AlertDescription className="flex items-center gap-2">
-                        <span>Budget analysis complete!</span>
-                        {analyzedBudget.potentialBudgetCents && (
-                          <Badge variant="secondary" className="ml-2">
-                            {analyzedBudget.savings ? `Save ${formatCurrency(analyzedBudget.savings.interestSavedCents, user?.currency || "USD")} in interest` : "Optimized"}
-                          </Badge>
-                        )}
+                      <AlertDescription className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>Budget analysis complete!</span>
+                          {analyzedBudget.potentialBudgetCents && (
+                            <Badge variant="secondary" className="ml-2">
+                              {analyzedBudget.savings ? `Save ${formatCurrency(analyzedBudget.savings.interestSavedCents, user?.currency || "USD")} in interest` : "Optimized"}
+                            </Badge>
+                          )}
+                        </div>
+                        <FindMyBudgetButton 
+                          size="sm"
+                          variant="outline"
+                        />
                       </AlertDescription>
                     </Alert>
 
