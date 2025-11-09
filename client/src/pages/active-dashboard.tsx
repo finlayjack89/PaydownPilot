@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { TrendingDown, Calendar, DollarSign, Target, CreditCard, BarChart3, CheckCircle2 } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
+import { FindMyBudgetButton } from "@/components/find-my-budget-button";
 
 export default function ActiveDashboard() {
   const { data: accounts = [] } = useAccounts();
@@ -153,6 +154,13 @@ export default function ActiveDashboard() {
                   </div>
                 </Link>
               </Button>
+
+              <div className="h-auto py-4 flex-col items-start">
+                <FindMyBudgetButton variant="outline" className="h-full w-full justify-start flex-col items-start hover-elevate" />
+                <div className="text-xs text-muted-foreground font-normal mt-2 px-1">
+                  AI-powered budget analysis based on your transactions
+                </div>
+              </div>
 
               <Button
                 asChild

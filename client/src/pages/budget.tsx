@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FindMyBudgetButton } from "@/components/find-my-budget-button";
 import type { Budget, Account } from "@shared/schema";
 
 interface FutureBudgetChange {
@@ -299,6 +300,21 @@ export default function Budget() {
                   <p className="text-xs text-muted-foreground">
                     This should be the total amount available for all debt payments, not per account
                   </p>
+                </div>
+
+                {/* AI Budget Analysis */}
+                <div className="flex flex-col space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-px bg-border" />
+                    <span className="text-xs text-muted-foreground px-2">OR</span>
+                    <div className="flex-1 h-px bg-border" />
+                  </div>
+                  <div className="flex flex-col items-center space-y-2 py-4">
+                    <p className="text-sm text-muted-foreground text-center">
+                      Let AI analyze your spending and suggest an optimal budget
+                    </p>
+                    <FindMyBudgetButton variant="outline" />
+                  </div>
                 </div>
 
                 <div className="rounded-lg bg-muted p-6 space-y-3">
