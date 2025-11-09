@@ -12,6 +12,7 @@ import { randomUUID } from "crypto";
 import { buildStructuredPlan } from "./plan-transformer";
 import { registerPlaidRoutes } from "./routes/plaid";
 import { registerLenderRuleRoutes } from "./routes/lender-rules";
+import { registerBudgetAnalysisRoutes } from "./routes/budget-analysis";
 
 // Helper function to retry fetch requests with exponential backoff
 async function fetchWithRetry(
@@ -103,6 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register modular routes
   registerPlaidRoutes(app);
   registerLenderRuleRoutes(app);
+  registerBudgetAnalysisRoutes(app);
 
   // ==================== Auth Routes ====================
   app.post("/api/auth/signup", async (req, res, next) => {

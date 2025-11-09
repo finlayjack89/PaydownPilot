@@ -1,11 +1,12 @@
 import { 
-  users, accounts, budgets, preferences, plans, lenderRules,
+  users, accounts, budgets, preferences, plans, lenderRules, plaidItems,
   type User, type InsertUser, 
   type Account, type InsertAccount,
   type Budget, type InsertBudget,
   type Preference, type InsertPreference,
   type Plan, type InsertPlan,
-  type LenderRule, type InsertLenderRule
+  type LenderRule, type InsertLenderRule,
+  type PlaidItem, type InsertPlaidItem
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -40,6 +41,11 @@ export interface IStorage {
   // Lender Rules methods
   getLenderRule(lenderName: string, country: string): Promise<LenderRule | undefined>;
   createLenderRule(rule: InsertLenderRule): Promise<LenderRule>;
+  
+  // Plaid Item methods
+  getPlaidItemByUserId(userId: string): Promise<PlaidItem | undefined>;
+  createPlaidItem(item: InsertPlaidItem): Promise<PlaidItem>;
+  updatePlaidItem(id: string, updates: Partial<PlaidItem>): Promise<PlaidItem | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -180,6 +186,22 @@ export class DatabaseStorage implements IStorage {
   async createLenderRule(rule: InsertLenderRule): Promise<LenderRule> {
     const [newRule] = await db.insert(lenderRules).values(rule).returning();
     return newRule;
+  }
+  
+  // Plaid Item methods
+  async getPlaidItemByUserId(userId: string): Promise<PlaidItem | undefined> {
+    const [item] = await db.select().from(plaidItems).where(eq(plaidItems.userId, userId));
+    return item || undefined;
+  }
+  
+  async createPlaidItem(item: InsertPlaidItem): Promise<PlaidItem> {
+    const [newItem] = await db.insert(plaidItems).values(item).returning();
+    return newItem;
+  }
+  
+  async updatePlaidItem(id: string, updates: Partial<PlaidItem>): Promise<PlaidItem | undefined> {
+    const [item] = await db.update(plaidItems).set(updates).where(eq(plaidItems.id, id)).returning();
+    return item || undefined;
   }
 }
 
@@ -335,6 +357,27 @@ class GuestStorageWrapper implements IStorage {
 
   async createLenderRule(rule: InsertLenderRule): Promise<LenderRule> {
     return this.dbStorage.createLenderRule(rule);
+  }
+  
+  // Plaid Items - pass through to database (not guest specific)
+  async getPlaidItemByUserId(userId: string): Promise<PlaidItem | undefined> {
+    // Guest users don't have Plaid items
+    if (this.isGuest(userId)) {
+      return undefined;
+    }
+    return this.dbStorage.getPlaidItemByUserId(userId);
+  }
+  
+  async createPlaidItem(item: InsertPlaidItem): Promise<PlaidItem> {
+    // Guest users can't create Plaid items
+    if (this.isGuest(item.userId)) {
+      throw new Error("Guest users cannot connect bank accounts");
+    }
+    return this.dbStorage.createPlaidItem(item);
+  }
+  
+  async updatePlaidItem(id: string, updates: Partial<PlaidItem>): Promise<PlaidItem | undefined> {
+    return this.dbStorage.updatePlaidItem(id, updates);
   }
 }
 
