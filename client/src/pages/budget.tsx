@@ -15,6 +15,9 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FindMyBudgetButton } from "@/components/find-my-budget-button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Calculator, TrendingUp, CheckCircle2 } from "lucide-react";
 import type { Budget, Account } from "@shared/schema";
 
 interface FutureBudgetChange {
@@ -28,6 +31,15 @@ interface LumpSumPayment {
   targetLenderName: string | null;
 }
 
+interface AnalyzedBudget {
+  currentBudgetCents: number;
+  potentialBudgetCents: number | null;
+  savings?: {
+    monthsFaster: number;
+    interestSavedCents: number;
+  };
+}
+
 export default function Budget() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
@@ -36,6 +48,7 @@ export default function Budget() {
   const [monthlyBudget, setMonthlyBudget] = useState("");
   const [futureChanges, setFutureChanges] = useState<FutureBudgetChange[]>([]);
   const [lumpSumPayments, setLumpSumPayments] = useState<LumpSumPayment[]>([]);
+  const [selectedBudgetType, setSelectedBudgetType] = useState<"manual" | "current" | "potential">("manual");
 
   // Future change form
   const [newChangeDate, setNewChangeDate] = useState("");
@@ -52,6 +65,12 @@ export default function Budget() {
 
   const { data: accounts } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
+  });
+
+  // Fetch analyzed budgets
+  const { data: analyzedBudget } = useQuery<AnalyzedBudget>({
+    queryKey: ["/api/budget/current"],
+    retry: false,
   });
 
   // Handle 404 as "no budget yet" rather than an error
@@ -279,43 +298,207 @@ export default function Budget() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="monthlyBudget" className="text-sm font-medium">
-                    Monthly Payment Budget
-                  </Label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-mono">
-                      {currencySymbol}
-                    </span>
-                    <Input
-                      id="monthlyBudget"
-                      type="text"
-                      placeholder="500.00"
-                      value={monthlyBudget}
-                      onChange={(e) => setMonthlyBudget(e.target.value)}
-                      className="h-16 pl-8 pr-4 text-2xl font-mono font-semibold text-right"
-                      data-testid="input-monthly-budget"
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    This should be the total amount available for all debt payments, not per account
-                  </p>
-                </div>
+                {/* Show analyzed budget options if available */}
+                {analyzedBudget && (
+                  <div className="space-y-4">
+                    <Alert className="border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/20">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="flex items-center gap-2">
+                        <span>Budget analysis complete!</span>
+                        {analyzedBudget.potentialBudgetCents && (
+                          <Badge variant="secondary" className="ml-2">
+                            {analyzedBudget.savings ? `Save ${formatCurrency(analyzedBudget.savings.interestSavedCents, user?.currency || "USD")} in interest` : "Optimized"}
+                          </Badge>
+                        )}
+                      </AlertDescription>
+                    </Alert>
 
-                {/* AI Budget Analysis */}
-                <div className="flex flex-col space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-px bg-border" />
-                    <span className="text-xs text-muted-foreground px-2">OR</span>
-                    <div className="flex-1 h-px bg-border" />
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Select Budget Option</Label>
+                      <div className="grid gap-3">
+                        {/* Manual Budget Option */}
+                        <div
+                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all hover-elevate ${
+                            selectedBudgetType === "manual" ? "border-primary bg-primary/5" : "border-border"
+                          }`}
+                          onClick={() => {
+                            setSelectedBudgetType("manual");
+                            setMonthlyBudget("");
+                          }}
+                          data-testid="budget-option-manual"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5">
+                              <div className={`w-4 h-4 rounded-full border-2 ${
+                                selectedBudgetType === "manual" 
+                                  ? "border-primary bg-primary" 
+                                  : "border-muted-foreground"
+                              }`}>
+                                {selectedBudgetType === "manual" && (
+                                  <CheckCircle2 className="w-3 h-3 text-primary-foreground" />
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-medium">Enter Budget Manually</div>
+                              <div className="text-sm text-muted-foreground mt-1">
+                                Input your own monthly budget amount
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Current Budget Option */}
+                        <div
+                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all hover-elevate ${
+                            selectedBudgetType === "current" ? "border-primary bg-primary/5" : "border-border"
+                          }`}
+                          onClick={() => {
+                            setSelectedBudgetType("current");
+                            setMonthlyBudget((analyzedBudget.currentBudgetCents / 100).toString());
+                          }}
+                          data-testid="budget-option-current"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5">
+                              <div className={`w-4 h-4 rounded-full border-2 ${
+                                selectedBudgetType === "current" 
+                                  ? "border-primary bg-primary" 
+                                  : "border-muted-foreground"
+                              }`}>
+                                {selectedBudgetType === "current" && (
+                                  <CheckCircle2 className="w-3 h-3 text-primary-foreground" />
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-medium flex items-center gap-2">
+                                <Calculator className="w-4 h-4" />
+                                Use Analyzed Budget
+                                <Badge variant="secondary">Recommended</Badge>
+                              </div>
+                              <div className="text-sm text-muted-foreground mt-1">
+                                {formatCurrency(analyzedBudget.currentBudgetCents, user?.currency || "USD")}/month based on your transaction history
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Potential Budget Option */}
+                        {analyzedBudget.potentialBudgetCents && (
+                          <div
+                            className={`p-4 rounded-lg border-2 cursor-pointer transition-all hover-elevate ${
+                              selectedBudgetType === "potential" ? "border-primary bg-primary/5" : "border-border"
+                            }`}
+                            onClick={() => {
+                              setSelectedBudgetType("potential");
+                              setMonthlyBudget((analyzedBudget.potentialBudgetCents! / 100).toString());
+                            }}
+                            data-testid="budget-option-potential"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="mt-0.5">
+                                <div className={`w-4 h-4 rounded-full border-2 ${
+                                  selectedBudgetType === "potential" 
+                                    ? "border-primary bg-primary" 
+                                    : "border-muted-foreground"
+                                }`}>
+                                  {selectedBudgetType === "potential" && (
+                                    <CheckCircle2 className="w-3 h-3 text-primary-foreground" />
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium flex items-center gap-2">
+                                  <TrendingUp className="w-4 h-4 text-green-600" />
+                                  Use Optimized Budget
+                                  <Badge variant="default">Fastest Payoff</Badge>
+                                </div>
+                                <div className="text-sm text-muted-foreground mt-1">
+                                  {formatCurrency(analyzedBudget.potentialBudgetCents, user?.currency || "USD")}/month with spending optimizations
+                                </div>
+                                {analyzedBudget.savings && (
+                                  <div className="text-xs text-green-600 dark:text-green-400 mt-2">
+                                    Pay off debt {analyzedBudget.savings.monthsFaster} months faster and save {formatCurrency(analyzedBudget.savings.interestSavedCents, user?.currency || "USD")} in interest
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Manual input field when manual is selected */}
+                    {selectedBudgetType === "manual" && (
+                      <div className="space-y-2 pt-2">
+                        <Label htmlFor="monthlyBudget" className="text-sm font-medium">
+                          Enter Monthly Payment Budget
+                        </Label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-mono">
+                            {currencySymbol}
+                          </span>
+                          <Input
+                            id="monthlyBudget"
+                            type="text"
+                            placeholder="500.00"
+                            value={monthlyBudget}
+                            onChange={(e) => setMonthlyBudget(e.target.value)}
+                            className="h-16 pl-8 pr-4 text-2xl font-mono font-semibold text-right"
+                            data-testid="input-monthly-budget"
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          This should be the total amount available for all debt payments, not per account
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex flex-col items-center space-y-2 py-4">
-                    <p className="text-sm text-muted-foreground text-center">
-                      Let AI analyze your spending and suggest an optimal budget
-                    </p>
-                    <FindMyBudgetButton variant="outline" />
-                  </div>
-                </div>
+                )}
+
+                {/* Show manual input and Find My Budget button when no analyzed budget exists */}
+                {!analyzedBudget && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="monthlyBudget" className="text-sm font-medium">
+                        Monthly Payment Budget
+                      </Label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-mono">
+                          {currencySymbol}
+                        </span>
+                        <Input
+                          id="monthlyBudget"
+                          type="text"
+                          placeholder="500.00"
+                          value={monthlyBudget}
+                          onChange={(e) => setMonthlyBudget(e.target.value)}
+                          className="h-16 pl-8 pr-4 text-2xl font-mono font-semibold text-right"
+                          data-testid="input-monthly-budget"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        This should be the total amount available for all debt payments, not per account
+                      </p>
+                    </div>
+
+                    {/* AI Budget Analysis */}
+                    <div className="flex flex-col space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-px bg-border" />
+                        <span className="text-xs text-muted-foreground px-2">OR</span>
+                        <div className="flex-1 h-px bg-border" />
+                      </div>
+                      <div className="flex flex-col items-center space-y-2 py-4">
+                        <p className="text-sm text-muted-foreground text-center">
+                          Let AI analyze your spending and suggest an optimal budget
+                        </p>
+                        <FindMyBudgetButton variant="outline" />
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div className="rounded-lg bg-muted p-6 space-y-3">
                   <h3 className="font-medium">Budgeting Tips</h3>

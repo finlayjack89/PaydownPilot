@@ -65,7 +65,24 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
     },
     onSuccess: (data: any) => {
       setIsAnalyzing(false);
-      setAnalysisResults(data);
+      
+      // Transform backend snake_case response to frontend camelCase format
+      const transformedData = {
+        monthlyNetIncomeCents: data.analysis.identified_monthly_net_income_cents,
+        essentialExpensesCents: data.analysis.identified_essential_expenses_total_cents,
+        currentBudgetCents: data.analysis.current_budget_cents,
+        disposableIncomeCents: data.analysis.potential_budget_cents, // Income after essential expenses
+        nonEssentialSubscriptions: data.analysis.non_essential_subscriptions.map((sub: any) => ({
+          name: sub.name,
+          monthlyCostCents: sub.amount_cents // Transform amount_cents to monthlyCostCents
+        })),
+        nonEssentialDiscretionaryCategories: data.analysis.non_essential_discretionary_categories.map((cat: any) => ({
+          category: cat.category,
+          monthlyCostCents: cat.total_cents // Transform total_cents to monthlyCostCents
+        }))
+      };
+      
+      setAnalysisResults(transformedData);
     },
     onError: (error: any) => {
       setIsAnalyzing(false);
