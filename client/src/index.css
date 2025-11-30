@@ -14,6 +14,17 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
+  /* Liquid Glass Effects */
+  --glass-blur-sm: blur(5px);
+  --glass-blur-md: blur(10px);
+  --glass-blur-lg: blur(20px);
+  --glass-opacity-primary: 0.65;
+  --glass-opacity-secondary: 0.55;
+  --glass-opacity-tertiary: 0.45;
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-bg-light: rgba(255, 255, 255, 0.7);
+  --glass-bg-light-strong: rgba(255, 255, 255, 0.85);
+
   --background: 0 0% 100%;
 
   --foreground: 222 47% 11%;
@@ -131,6 +142,17 @@
   /* Backgrounds applied on top of other backgrounds when hovered/active */
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
+
+  /* Liquid Glass Effects - Dark Mode */
+  --glass-blur-sm: blur(5px);
+  --glass-blur-md: blur(10px);
+  --glass-blur-lg: blur(20px);
+  --glass-opacity-primary: 0.70;
+  --glass-opacity-secondary: 0.60;
+  --glass-opacity-tertiary: 0.50;
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-bg-light: rgba(30, 30, 50, 0.6);
+  --glass-bg-light-strong: rgba(30, 30, 50, 0.75);
 
   --background: 222 47% 11%;
 
@@ -326,5 +348,102 @@
   .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
     inset: -1px;
+  }
+
+  /* Liquid Glass Utilities */
+  .glass-header {
+    @apply backdrop-blur-xl;
+    background: var(--glass-bg-light);
+    border-color: var(--glass-border);
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .glass-card {
+    @apply backdrop-blur-lg;
+    background: rgba(255, 255, 255, var(--glass-opacity-primary));
+    border-color: var(--glass-border);
+  }
+
+  .dark .glass-card {
+    background: rgba(30, 30, 50, var(--glass-opacity-primary));
+  }
+
+  .glass-card-sm {
+    @apply backdrop-blur-md;
+    background: rgba(255, 255, 255, var(--glass-opacity-secondary));
+    border-color: var(--glass-border);
+  }
+
+  .dark .glass-card-sm {
+    background: rgba(30, 30, 50, var(--glass-opacity-secondary));
+  }
+
+  .glass-button {
+    @apply backdrop-blur-sm transition-all duration-200;
+    border-color: var(--glass-border);
+  }
+
+  .glass-button-primary {
+    @apply glass-button;
+    background: rgba(59, 130, 246, 0.25);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: hsl(var(--foreground));
+  }
+
+  .glass-button-primary:hover {
+    @apply backdrop-blur-md;
+    background: rgba(59, 130, 246, 0.35);
+    border-color: rgba(59, 130, 246, 0.4);
+  }
+
+  .glass-button-secondary {
+    @apply glass-button;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  .dark .glass-button-secondary {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .glass-button-secondary:hover {
+    @apply backdrop-blur-md;
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  .dark .glass-button-secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .glass-button-destructive {
+    @apply glass-button;
+    background: rgba(239, 68, 68, 0.25);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .glass-button-destructive:hover {
+    @apply backdrop-blur-md;
+    background: rgba(239, 68, 68, 0.35);
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+
+  .glass-input {
+    @apply backdrop-blur-sm;
+    background: rgba(255, 255, 255, 0.5);
+    border-color: var(--glass-border);
+  }
+
+  .dark .glass-input {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-input:focus {
+    @apply backdrop-blur-md;
+    background: rgba(255, 255, 255, 0.65);
+  }
+
+  .dark .glass-input:focus {
+    background: rgba(255, 255, 255, 0.12);
   }
 }

@@ -290,12 +290,12 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b">
+      <header className="glass-header sticky top-0 z-40 border-b">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
           <Logo />
           <div className="flex items-center gap-4">
             <Button
-              variant="outline"
+              className="glass-button-secondary"
               onClick={() => refreshMutation.mutate()}
               disabled={refreshMutation.isPending}
               data-testid="button-refresh-dashboard"
@@ -304,7 +304,7 @@ export default function Dashboard() {
               {refreshMutation.isPending ? "Refreshing..." : "Refresh Dashboard"}
             </Button>
             <Button
-              variant="outline"
+              className="glass-button-secondary"
               onClick={() => setLocation("/accounts")}
               data-testid="button-manage-accounts"
             >
@@ -312,7 +312,7 @@ export default function Dashboard() {
               Manage Accounts
             </Button>
             <Button
-              variant="outline"
+              className="glass-button-secondary"
               onClick={() => setLocation("/preferences")}
               data-testid="button-settings"
             >
@@ -326,14 +326,14 @@ export default function Dashboard() {
 
       <main className="container mx-auto max-w-7xl px-4 py-8">
         <div className="mb-8 flex items-start justify-between">
-          <div>
-            <h1 className="text-4xl font-bold">Your Debt Payoff Plan</h1>
+          <div className="flex-1">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">Your Debt Payoff Plan</h1>
             <p className="text-muted-foreground mt-2">
               Optimized to {plan.status === "OPTIMAL" ? "minimize your total interest" : "work within your constraints"}
             </p>
           </div>
           <Button
-            variant="destructive"
+            className="glass-button-destructive"
             onClick={() => {
               if (confirm("Are you sure you want to delete this plan? Your accounts and balances will not be affected. You can generate a new plan anytime.")) {
                 deletePlanMutation.mutate();
@@ -347,14 +347,14 @@ export default function Dashboard() {
           </Button>
         </div>
 
-        {/* Summary Cards */}
+        {/* Summary Cards - Glass Effect */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5 mb-8">
-          <Card data-testid="card-total-debt">
+          <Card className="glass-card-sm border" data-testid="card-total-debt">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Total Debt
               </CardTitle>
-              <TrendingDown className="h-5 w-5 text-muted-foreground" />
+              <TrendingDown className="h-5 w-5 text-primary" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-mono font-bold">
@@ -366,12 +366,12 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card data-testid="card-total-interest">
+          <Card className="glass-card-sm border" data-testid="card-total-interest">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Total Interest
               </CardTitle>
-              <DollarSign className="h-5 w-5 text-muted-foreground" />
+              <DollarSign className="h-5 w-5 text-primary" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-mono font-bold">
@@ -383,12 +383,12 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card data-testid="card-payoff-date">
+          <Card className="glass-card-sm border" data-testid="card-payoff-date">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Debt-Free Date
               </CardTitle>
-              <Calendar className="h-5 w-5 text-muted-foreground" />
+              <Calendar className="h-5 w-5 text-primary" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-mono font-bold">
@@ -400,12 +400,12 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card data-testid="card-next-payment">
+          <Card className="glass-card-sm border" data-testid="card-next-payment">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Next Payment
               </CardTitle>
-              <Target className="h-5 w-5 text-muted-foreground" />
+              <Target className="h-5 w-5 text-primary" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-mono font-bold">
@@ -417,12 +417,12 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card data-testid="card-monthly-budget">
+          <Card className="glass-card-sm border" data-testid="card-monthly-budget">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Monthly Budget
               </CardTitle>
-              <Wallet className="h-5 w-5 text-muted-foreground" />
+              <Wallet className="h-5 w-5 text-primary" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-mono font-bold">
@@ -436,7 +436,7 @@ export default function Dashboard() {
         </div>
 
         {/* Accelerator Slider */}
-        <Card className="mb-8" data-testid="card-accelerator">
+        <Card className="glass-card border mb-8" data-testid="card-accelerator">
           <CardHeader>
             <CardTitle>Accelerator</CardTitle>
             <CardDescription>
@@ -498,7 +498,7 @@ export default function Dashboard() {
             </div>
             <div className="flex gap-2">
               <Button 
-                className="flex-1"
+                className="flex-1 glass-button-primary"
                 onClick={() => {
                   if (!budget) return;
                   const newBudget = budget.monthlyBudgetCents + (acceleratorValue * 100);
