@@ -28,10 +28,12 @@ Preferred communication style: Simple, everyday language.
 
 ### Debt Buckets (UK Credit Card Feature)
 - **Purpose**: UK credit cards often have multiple balance segments at different APRs (0% balance transfers, 24.9% purchases, 39.9% cash advances). The bucket system allows users to track these separately for accurate interest calculations and payment prioritization.
-- **Bucket Types**: PURCHASES, BALANCE_TRANSFER, MONEY_TRANSFER, CASH_ADVANCE, CUSTOM.
-- **Data Model**: Each bucket has `balanceCents`, `aprBps`, `isPromo`, `promoExpiryDate`, and `label`. Bucket totals must equal the account's `currentBalanceCents`.
-- **Solver Integration**: The Python solver uses weighted-average APR across buckets for interest calculations and respects bucket-level promo periods. UK payment allocation rules apply (minimum payments first, then highest APR buckets).
+- **Bucket Types**: PURCHASES (blue), BALANCE_TRANSFER (green), MONEY_TRANSFER (purple), CASH_ADVANCE (amber), CUSTOM (gray).
+- **Data Model**: Each bucket has `bucketType`, `balanceCents`, `aprBps`, `isPromo`, `promoExpiryDate`, and `label`. Bucket totals must equal the account's `currentBalanceCents`.
+- **Solver Integration**: The Python solver uses weighted-average APR across buckets for interest calculations and respects bucket-level promo periods. When a promo expires, the bucket reverts to the account's standard APR. Validation ensures only Credit Card accounts can have buckets.
 - **UI Flow**: 3-step Statement Wizard (Headline → Split Decision → Bucket Builder) guides users through creating bucket-enabled credit card accounts. Dashboard tiles show colored bucket segments with tooltips.
+- **API Integration**: Use `GET /api/accounts?withBuckets=true` to fetch accounts with their bucket data. The frontend accounts and dashboard pages use this endpoint.
+- **Guest Mode**: Buckets are fully supported in guest mode with in-memory storage via GuestStorageWrapper.
 
 ### Python Backend Integration
 - **Setup**: FastAPI backend (`main.py`, `solver_engine.py`, `schemas.py`) runs as a child process of the Node.js server (port 8000).
