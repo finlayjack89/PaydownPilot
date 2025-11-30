@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Sparkles, Building2, PenLine } from "lucide-react";
+import { Loader2, Sparkles, Building2, PenLine, CreditCard, Wallet, Landmark } from "lucide-react";
 import { AccountType } from "@shared/schema";
 import type { Account, LenderRuleDiscoveryResponse, PlaidLinkTokenResponse, PlaidExchangeResponse, PlaidAccount } from "@shared/schema";
 import { useAuth } from "@/lib/auth-context";
@@ -15,6 +15,7 @@ import { parseCurrencyToCents, formatBpsInput } from "@/lib/format";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { usePlaidLink } from "react-plaid-link";
+import { StatementWizard } from "./statement-wizard";
 
 interface AddAccountDialogProps {
   open: boolean;
@@ -27,8 +28,9 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
   const { toast } = useToast();
   const isEditing = !!account;
 
-  // Entry method state: selection | manual | plaid
-  const [entryMethod, setEntryMethod] = useState<"selection" | "manual" | "plaid">("selection");
+  // Entry method state: selection | type-selection | manual | plaid | credit-card-wizard
+  const [entryMethod, setEntryMethod] = useState<"selection" | "type-selection" | "manual" | "plaid" | "credit-card-wizard">("selection");
+  const [selectedAccountType, setSelectedAccountType] = useState<AccountType>(AccountType.CREDIT_CARD);
 
   const [lenderName, setLenderName] = useState("");
   const [accountType, setAccountType] = useState<AccountType>(AccountType.CREDIT_CARD);
@@ -308,7 +310,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
     saveMutation.mutate(accountData);
   };
 
-  // Selection screen UI
+  // Selection screen UI - Choose entry method
   const renderSelectionScreen = () => (
     <div className="space-y-6 py-8">
       <div className="text-center space-y-2">
@@ -342,7 +344,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
 
         <Card 
           className="p-6 hover-elevate active-elevate-2 cursor-pointer border-2"
-          onClick={() => setEntryMethod("manual")}
+          onClick={() => setEntryMethod("type-selection")}
           data-testid="card-manual-entry"
         >
           <div className="flex flex-col items-center gap-4 text-center">
@@ -361,6 +363,94 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
           </div>
         </Card>
       </div>
+    </div>
+  );
+
+  // Account type selection screen
+  const renderTypeSelectionScreen = () => (
+    <div className="space-y-6 py-6">
+      <div className="text-center space-y-2">
+        <h3 className="text-lg font-semibold">What type of debt would you like to add?</h3>
+        <p className="text-sm text-muted-foreground">
+          Select the type that best matches your account
+        </p>
+      </div>
+
+      <div className="grid gap-4">
+        <Card 
+          className="p-5 hover-elevate active-elevate-2 cursor-pointer border-2 transition-all"
+          onClick={() => {
+            setSelectedAccountType(AccountType.CREDIT_CARD);
+            setEntryMethod("credit-card-wizard");
+          }}
+          data-testid="card-credit-card"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900/30">
+              <CreditCard className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="flex-1">
+              <h4 className="font-semibold mb-0.5">Credit Card</h4>
+              <p className="text-sm text-muted-foreground">
+                Track multiple balance types with different APRs (balance transfers, purchases, etc.)
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        <Card 
+          className="p-5 hover-elevate active-elevate-2 cursor-pointer border-2 transition-all"
+          onClick={() => {
+            setSelectedAccountType(AccountType.BNPL);
+            setAccountType(AccountType.BNPL);
+            setEntryMethod("manual");
+          }}
+          data-testid="card-bnpl"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-full bg-purple-100 dark:bg-purple-900/30">
+              <Wallet className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div className="flex-1">
+              <h4 className="font-semibold mb-0.5">Buy Now, Pay Later</h4>
+              <p className="text-sm text-muted-foreground">
+                Klarna, Clearpay, PayPal Pay in 3, and similar services
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        <Card 
+          className="p-5 hover-elevate active-elevate-2 cursor-pointer border-2 transition-all"
+          onClick={() => {
+            setSelectedAccountType(AccountType.LOAN);
+            setAccountType(AccountType.LOAN);
+            setEntryMethod("manual");
+          }}
+          data-testid="card-loan"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-full bg-green-100 dark:bg-green-900/30">
+              <Landmark className="h-6 w-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div className="flex-1">
+              <h4 className="font-semibold mb-0.5">Personal Loan</h4>
+              <p className="text-sm text-muted-foreground">
+                Fixed-term loans with regular monthly payments
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Button 
+        variant="ghost" 
+        onClick={() => setEntryMethod("selection")}
+        className="w-full"
+        data-testid="button-back-to-selection"
+      >
+        Back to connection options
+      </Button>
     </div>
   );
 
@@ -566,6 +656,22 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
     </div>
   );
 
+  // For credit card wizard, render the separate dialog
+  if (entryMethod === "credit-card-wizard") {
+    return (
+      <StatementWizard 
+        open={open} 
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setEntryMethod("selection");
+          }
+          onOpenChange(isOpen);
+        }}
+        account={account?.accountType === AccountType.CREDIT_CARD ? account : null}
+      />
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -578,13 +684,16 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
               ? "Update your account details" 
               : entryMethod === "selection" 
                 ? "Choose how you'd like to add your accounts"
-                : entryMethod === "plaid"
-                  ? "Connecting with Plaid..."
-                  : "Add a credit card, loan, or BNPL account"}
+                : entryMethod === "type-selection"
+                  ? "Select your account type"
+                  : entryMethod === "plaid"
+                    ? "Connecting with Plaid..."
+                    : `Add a ${selectedAccountType === AccountType.BNPL ? "BNPL" : "Loan"} account`}
           </DialogDescription>
         </DialogHeader>
 
         {entryMethod === "selection" && renderSelectionScreen()}
+        {entryMethod === "type-selection" && renderTypeSelectionScreen()}
         {entryMethod === "plaid" && renderPlaidLoading()}
         {entryMethod === "manual" && (
           <>
@@ -595,7 +704,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
                 onClick={() => {
                   if (!isEditing) {
                     setLinkToken(null);
-                    setEntryMethod("selection");
+                    setEntryMethod("type-selection");
                   } else {
                     onOpenChange(false);
                     resetForm();
