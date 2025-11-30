@@ -652,9 +652,19 @@ export default function Dashboard() {
                         {planData?.slice(0, 36).map((row, idx) => {
                           const account = accounts.find((a: any) => a.lenderName === row.lenderName);
                           const dueDay = account?.paymentDueDay || 1;
-                          const monthDate = new Date();
-                          monthDate.setMonth(monthDate.getMonth() + row.month - 1);
-                          const paymentDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), dueDay);
+                          
+                          // Calculate payment date starting from the correct month
+                          // If we're already past the due day in the current month, start from next month
+                          const today = new Date();
+                          const isCurrentMonthPastDueDay = today.getDate() > dueDay;
+                          const baseMonth = isCurrentMonthPastDueDay ? today.getMonth() + 1 : today.getMonth();
+                          const baseYear = today.getFullYear();
+                          
+                          // Create base date for the first payment month
+                          const planStartDate = new Date(baseYear, baseMonth, 1);
+                          
+                          // Add the plan's month offset (month 1 = first payment month)
+                          const paymentDate = new Date(baseYear, baseMonth + row.month - 1, dueDay);
                           
                           return (
                             <tr
@@ -663,7 +673,7 @@ export default function Dashboard() {
                               data-testid={`row-payment-${idx}`}
                             >
                               <td className="py-3 px-4 font-mono">
-                                {formatMonthYear(row.month - 1, new Date())}
+                                {formatMonthYear(row.month - 1, planStartDate)}
                               </td>
                               <td className="py-3 px-4">{row.lenderName}</td>
                               <td className="py-3 px-4 text-muted-foreground">

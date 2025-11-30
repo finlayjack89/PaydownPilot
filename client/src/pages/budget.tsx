@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { ArrowRight, ArrowLeft, Plus, Trash2, Calendar, DollarSign } from "lucide-react";
+import { ArrowRight, ArrowLeft, Plus, Trash2, Calendar, DollarSign, AlertTriangle } from "lucide-react";
 import { parseCurrencyToCents, formatCurrency } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +19,28 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Calculator, TrendingUp, CheckCircle2 } from "lucide-react";
 import type { Budget, Account } from "@shared/schema";
+
+// Calculate minimum payment for a single account based on its rules
+function calculateMinimumPayment(account: Account): number {
+  const balance = account.currentBalanceCents;
+  const fixedCents = account.minPaymentRuleFixedCents || 0;
+  const percentageBps = account.minPaymentRulePercentageBps || 0;
+  
+  // Calculate percentage component (in cents)
+  // percentageBps is in basis points (e.g., 250 = 2.5%)
+  const percentageAmount = Math.ceil((balance * percentageBps) / 10000);
+  
+  // Minimum payment is the greater of fixed amount or percentage
+  const rawMinimum = Math.max(fixedCents, percentageAmount);
+  
+  // But never more than the total balance
+  return Math.min(rawMinimum, balance);
+}
+
+// Calculate total minimum payments across all accounts
+function calculateTotalMinimumPayments(accounts: Account[]): number {
+  return accounts.reduce((total, account) => total + calculateMinimumPayment(account), 0);
+}
 
 interface FutureBudgetChange {
   effectiveDate: string;
@@ -75,6 +97,17 @@ export default function Budget() {
 
   // Handle 404 as "no budget yet" rather than an error
   const hasBudget = existingBudget && !budgetError;
+
+  // Calculate total minimum payments across all accounts
+  const totalMinimumPayments = useMemo(() => {
+    if (!accounts || accounts.length === 0) return 0;
+    return calculateTotalMinimumPayments(accounts);
+  }, [accounts]);
+
+  // Check if current budget meets minimum payment requirements
+  const budgetCents = parseCurrencyToCents(monthlyBudget) || 0;
+  const isBudgetSufficient = budgetCents >= totalMinimumPayments;
+  const budgetShortfall = totalMinimumPayments - budgetCents;
 
   useEffect(() => {
     if (existingBudget && !budgetError) {
@@ -506,6 +539,42 @@ export default function Budget() {
                   </>
                 )}
 
+                {/* Minimum Payment Requirements Display */}
+                {accounts && accounts.length > 0 && (
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-sm">Minimum Payment Requirement</h3>
+                      <Badge variant="outline" className="font-mono" data-testid="badge-minimum-payments">
+                        {formatCurrency(totalMinimumPayments, user?.currency)}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Combined minimum payments for all {accounts.length} account{accounts.length > 1 ? 's' : ''} based on your lenders' rules
+                    </p>
+                    
+                    {/* Warning if budget is below minimum */}
+                    {monthlyBudget && !isBudgetSufficient && (
+                      <Alert variant="destructive" className="mt-2" data-testid="alert-budget-insufficient">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription className="ml-2">
+                          <strong>Budget too low:</strong> Your budget is {formatCurrency(budgetShortfall, user?.currency)} short of the minimum required.
+                          You need at least {formatCurrency(totalMinimumPayments, user?.currency)} to cover all minimum payments.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {/* Success message if budget is sufficient */}
+                    {monthlyBudget && isBudgetSufficient && budgetCents > 0 && (
+                      <Alert className="mt-2 border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/20" data-testid="alert-budget-sufficient">
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <AlertDescription className="ml-2 text-green-700 dark:text-green-400">
+                          Budget meets minimum requirements. Extra {formatCurrency(budgetCents - totalMinimumPayments, user?.currency)} will be optimized across accounts.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                )}
+
                 <div className="rounded-lg bg-muted p-6 space-y-3">
                   <h3 className="font-medium">Budgeting Tips</h3>
                   <ul className="space-y-2 text-sm text-muted-foreground">
@@ -756,11 +825,13 @@ export default function Budget() {
           </Button>
           <Button
             onClick={handleContinue}
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || (accounts && accounts.length > 0 && !isBudgetSufficient)}
             className="h-12 px-8"
             data-testid="button-continue"
           >
-            Continue to Preferences
+            {!isBudgetSufficient && accounts && accounts.length > 0 
+              ? "Budget Below Minimum" 
+              : "Continue to Preferences"}
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
