@@ -10,6 +10,15 @@ export enum AccountType {
   LOAN = "Loan"
 }
 
+// Bucket types for credit card balance segments
+export enum BucketType {
+  PURCHASES = "Purchases",
+  BALANCE_TRANSFER = "Balance Transfer",
+  MONEY_TRANSFER = "Money Transfer",
+  CASH_ADVANCE = "Cash Advance",
+  CUSTOM = "Custom"
+}
+
 export enum OptimizationStrategy {
   MINIMIZE_TOTAL_INTEREST = "Minimize Total Interest",
   MINIMIZE_MONTHLY_SPEND = "Minimize Monthly Spend",
@@ -42,16 +51,30 @@ export const accounts = pgTable("accounts", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   lenderName: text("lender_name").notNull(),
   accountType: text("account_type").notNull(),
+  currency: text("currency").default("USD"),
   currentBalanceCents: integer("current_balance_cents").notNull(),
   aprStandardBps: integer("apr_standard_bps").notNull(),
   paymentDueDay: integer("payment_due_day").notNull(),
   minPaymentRuleFixedCents: integer("min_payment_rule_fixed_cents").default(0),
   minPaymentRulePercentageBps: integer("min_payment_rule_percentage_bps").default(0),
   minPaymentRuleIncludesInterest: boolean("min_payment_rule_includes_interest").default(false),
+  isManualEntry: boolean("is_manual_entry").default(true),
   promoEndDate: date("promo_end_date"),
   promoDurationMonths: integer("promo_duration_months"),
   accountOpenDate: date("account_open_date"),
   notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const debtBuckets = pgTable("debt_buckets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  accountId: varchar("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  bucketType: text("bucket_type").notNull(),
+  label: text("label"),
+  balanceCents: integer("balance_cents").notNull(),
+  aprBps: integer("apr_bps").notNull(),
+  isPromo: boolean("is_promo").default(false),
+  promoExpiryDate: date("promo_expiry_date"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -114,6 +137,9 @@ export type InsertUser = typeof users.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
 export type InsertAccount = typeof accounts.$inferInsert;
 
+export type DebtBucket = typeof debtBuckets.$inferSelect;
+export type InsertDebtBucket = typeof debtBuckets.$inferInsert;
+
 export type Budget = typeof budgets.$inferSelect;
 export type InsertBudget = typeof budgets.$inferInsert;
 
@@ -144,9 +170,19 @@ export interface MonthlyResult {
   endingBalanceCents: number;
 }
 
+export interface BucketRequest {
+  bucketType: BucketType;
+  label?: string;
+  balanceCents: number;
+  aprBps: number;
+  isPromo: boolean;
+  promoExpiryDate?: string;
+}
+
 export interface AccountRequest {
   lenderName: string;
   accountType: AccountType;
+  currency?: string;
   currentBalanceCents: number;
   aprStandardBps: number;
   paymentDueDay: number;
@@ -155,6 +191,11 @@ export interface AccountRequest {
   promoDurationMonths?: number;
   accountOpenDate?: string;
   notes?: string;
+  buckets?: BucketRequest[];
+}
+
+export interface AccountWithBuckets extends Account {
+  buckets: DebtBucket[];
 }
 
 export interface BudgetRequest {
@@ -288,3 +329,47 @@ export const insertPreferenceSchema = createInsertSchema(preferences).omit({
   createdAt: true,
   updatedAt: true,
 });
+
+export const insertBucketSchema = createInsertSchema(debtBuckets, {
+  balanceCents: z.number().int().min(0),
+  aprBps: z.number().int().min(0),
+}).omit({
+  id: true,
+  accountId: true,
+  createdAt: true,
+});
+
+export const bucketRequestSchema = z.object({
+  bucketType: z.nativeEnum(BucketType),
+  label: z.string().optional(),
+  balanceCents: z.number().int().min(0),
+  aprBps: z.number().int().min(0),
+  isPromo: z.boolean().default(false),
+  promoExpiryDate: z.string().optional(),
+});
+
+export const accountWithBucketsRequestSchema = z.object({
+  lenderName: z.string().min(1),
+  accountType: z.nativeEnum(AccountType),
+  currency: z.string().default("USD"),
+  currentBalanceCents: z.number().int().min(0),
+  aprStandardBps: z.number().int().min(0),
+  paymentDueDay: z.number().int().min(1).max(28),
+  minPaymentRuleFixedCents: z.number().int().min(0).default(0),
+  minPaymentRulePercentageBps: z.number().int().min(0).default(0),
+  minPaymentRuleIncludesInterest: z.boolean().default(false),
+  isManualEntry: z.boolean().default(true),
+  promoEndDate: z.string().nullable().optional(),
+  promoDurationMonths: z.number().int().nullable().optional(),
+  accountOpenDate: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  buckets: z.array(bucketRequestSchema).optional(),
+}).refine(
+  (data) => {
+    return data.minPaymentRuleFixedCents > 0 || data.minPaymentRulePercentageBps > 0;
+  },
+  {
+    message: "At least one minimum payment component must be greater than zero",
+    path: ["minPaymentRuleFixedCents"],
+  }
+);

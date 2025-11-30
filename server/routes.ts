@@ -6,7 +6,8 @@ import { setupAuth, requireAuth, hashPassword } from "./auth";
 import { discoverLenderRule, generatePlanExplanation, answerPlanQuestion } from "./anthropic";
 import { 
   insertUserSchema, updateUserProfileSchema, insertAccountSchema, insertBudgetSchema, 
-  insertPreferenceSchema, type InsertAccount, type InsertBudget
+  insertPreferenceSchema, accountWithBucketsRequestSchema,
+  type InsertAccount, type InsertBudget, type InsertDebtBucket, AccountType, BucketType
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { buildStructuredPlan } from "./plan-transformer";
@@ -260,25 +261,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/accounts", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const accounts = await storage.getAccountsByUserId(userId);
-      res.json(accounts);
+      const withBuckets = req.query.withBuckets === 'true';
+      
+      if (withBuckets) {
+        const accounts = await storage.getAccountsWithBucketsByUserId(userId);
+        res.json(accounts);
+      } else {
+        const accounts = await storage.getAccountsByUserId(userId);
+        res.json(accounts);
+      }
     } catch (error: any) {
       res.status(500).send({ message: error.message || "Failed to fetch accounts" });
+    }
+  });
+
+  app.get("/api/accounts/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = (req.user as any).id;
+      const withBuckets = req.query.withBuckets === 'true';
+      
+      if (withBuckets) {
+        const account = await storage.getAccountWithBuckets(id);
+        if (!account || account.userId !== userId) {
+          return res.status(404).send({ message: "Account not found" });
+        }
+        res.json(account);
+      } else {
+        const account = await storage.getAccount(id);
+        if (!account || account.userId !== userId) {
+          return res.status(404).send({ message: "Account not found" });
+        }
+        res.json(account);
+      }
+    } catch (error: any) {
+      res.status(500).send({ message: error.message || "Failed to fetch account" });
     }
   });
 
   app.post("/api/accounts", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const validatedData = insertAccountSchema.parse(req.body);
+      const { buckets, ...accountData } = req.body;
       
-      const account = await storage.createAccount({
-        ...validatedData,
-        userId,
-      });
+      // Check if this is a credit card with buckets
+      if (buckets && Array.isArray(buckets) && buckets.length > 0) {
+        const validatedData = accountWithBucketsRequestSchema.parse(req.body);
+        
+        // Prepare buckets for insertion (accountId will be added by storage layer)
+        const bucketsToInsert = validatedData.buckets?.map((bucket: any) => ({
+          bucketType: bucket.bucketType,
+          label: bucket.label || null,
+          balanceCents: bucket.balanceCents,
+          aprBps: bucket.aprBps,
+          isPromo: bucket.isPromo,
+          promoExpiryDate: bucket.promoExpiryDate || null,
+        })) || [];
+        
+        const account = await storage.createAccountWithBuckets({
+          lenderName: validatedData.lenderName,
+          accountType: validatedData.accountType,
+          currency: validatedData.currency,
+          currentBalanceCents: validatedData.currentBalanceCents,
+          aprStandardBps: validatedData.aprStandardBps,
+          paymentDueDay: validatedData.paymentDueDay,
+          minPaymentRuleFixedCents: validatedData.minPaymentRuleFixedCents,
+          minPaymentRulePercentageBps: validatedData.minPaymentRulePercentageBps,
+          minPaymentRuleIncludesInterest: validatedData.minPaymentRuleIncludesInterest,
+          isManualEntry: validatedData.isManualEntry,
+          promoEndDate: validatedData.promoEndDate || null,
+          promoDurationMonths: validatedData.promoDurationMonths || null,
+          accountOpenDate: validatedData.accountOpenDate || null,
+          notes: validatedData.notes || null,
+          userId,
+        }, bucketsToInsert);
 
-      res.json(account);
+        res.json(account);
+      } else {
+        // Traditional account creation (no buckets or non-credit card)
+        const validatedData = insertAccountSchema.parse(accountData);
+        
+        const account = await storage.createAccount({
+          ...validatedData,
+          userId,
+        });
+
+        res.json(account);
+      }
     } catch (error: any) {
+      console.error("Account creation error:", error);
       res.status(400).send({ message: error.message || "Failed to create account" });
     }
   });
@@ -287,6 +358,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const userId = (req.user as any).id;
+      const { buckets, ...accountData } = req.body;
       
       // Verify ownership
       const existing = await storage.getAccount(id);
@@ -294,8 +366,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send({ message: "Account not found" });
       }
 
-      const updated = await storage.updateAccount(id, req.body);
-      res.json(updated);
+      // If buckets are provided, use the with-buckets update
+      if (buckets !== undefined) {
+        const bucketsToInsert: InsertDebtBucket[] = buckets.map((bucket: any) => ({
+          bucketType: bucket.bucketType,
+          label: bucket.label || null,
+          balanceCents: bucket.balanceCents,
+          aprBps: bucket.aprBps,
+          isPromo: bucket.isPromo || false,
+          promoExpiryDate: bucket.promoExpiryDate || null,
+        }));
+        
+        const updated = await storage.updateAccountWithBuckets(id, accountData, bucketsToInsert);
+        res.json(updated);
+      } else {
+        const updated = await storage.updateAccount(id, accountData);
+        res.json(updated);
+      }
     } catch (error: any) {
       res.status(400).send({ message: error.message || "Failed to update account" });
     }
@@ -316,6 +403,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Account deleted" });
     } catch (error: any) {
       res.status(400).send({ message: error.message || "Failed to delete account" });
+    }
+  });
+
+  // ==================== Bucket Routes ====================
+  app.get("/api/accounts/:accountId/buckets", requireAuth, async (req, res) => {
+    try {
+      const { accountId } = req.params;
+      const userId = (req.user as any).id;
+      
+      // Verify ownership
+      const account = await storage.getAccount(accountId);
+      if (!account || account.userId !== userId) {
+        return res.status(404).send({ message: "Account not found" });
+      }
+
+      const buckets = await storage.getBucketsByAccountId(accountId);
+      res.json(buckets);
+    } catch (error: any) {
+      res.status(500).send({ message: error.message || "Failed to fetch buckets" });
     }
   });
 

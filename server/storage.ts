@@ -1,12 +1,14 @@
 import { 
-  users, accounts, budgets, preferences, plans, lenderRules, plaidItems,
+  users, accounts, budgets, preferences, plans, lenderRules, plaidItems, debtBuckets,
   type User, type InsertUser, 
   type Account, type InsertAccount,
   type Budget, type InsertBudget,
   type Preference, type InsertPreference,
   type Plan, type InsertPlan,
   type LenderRule, type InsertLenderRule,
-  type PlaidItem, type InsertPlaidItem
+  type PlaidItem, type InsertPlaidItem,
+  type DebtBucket, type InsertDebtBucket,
+  type AccountWithBuckets
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -20,10 +22,21 @@ export interface IStorage {
 
   // Account methods
   getAccountsByUserId(userId: string): Promise<Account[]>;
+  getAccountsWithBucketsByUserId(userId: string): Promise<AccountWithBuckets[]>;
   getAccount(id: string): Promise<Account | undefined>;
+  getAccountWithBuckets(id: string): Promise<AccountWithBuckets | undefined>;
   createAccount(account: InsertAccount): Promise<Account>;
+  createAccountWithBuckets(account: InsertAccount, buckets: Omit<InsertDebtBucket, 'accountId'>[]): Promise<AccountWithBuckets>;
   updateAccount(id: string, updates: Partial<Account>): Promise<Account | undefined>;
+  updateAccountWithBuckets(id: string, updates: Partial<Account>, buckets?: InsertDebtBucket[]): Promise<AccountWithBuckets | undefined>;
   deleteAccount(id: string): Promise<void>;
+
+  // Bucket methods
+  getBucketsByAccountId(accountId: string): Promise<DebtBucket[]>;
+  createBucket(bucket: InsertDebtBucket): Promise<DebtBucket>;
+  updateBucket(id: string, updates: Partial<DebtBucket>): Promise<DebtBucket | undefined>;
+  deleteBucket(id: string): Promise<void>;
+  deleteAllBucketsByAccountId(accountId: string): Promise<void>;
 
   // Budget methods
   getBudgetByUserId(userId: string): Promise<Budget | undefined>;
@@ -47,6 +60,8 @@ export interface IStorage {
   createPlaidItem(item: InsertPlaidItem): Promise<PlaidItem>;
   updatePlaidItem(id: string, updates: Partial<PlaidItem>): Promise<PlaidItem | undefined>;
 }
+
+type BucketInput = Omit<InsertDebtBucket, 'accountId'>;
 
 export class DatabaseStorage implements IStorage {
   // User methods
@@ -72,43 +87,11 @@ export class DatabaseStorage implements IStorage {
 
   // Account methods
   async getAccountsByUserId(userId: string): Promise<Account[]> {
-    return await db.select({
-      id: accounts.id,
-      userId: accounts.userId,
-      lenderName: accounts.lenderName,
-      accountType: accounts.accountType,
-      currentBalanceCents: accounts.currentBalanceCents,
-      aprStandardBps: accounts.aprStandardBps,
-      paymentDueDay: accounts.paymentDueDay,
-      minPaymentRuleFixedCents: accounts.minPaymentRuleFixedCents,
-      minPaymentRulePercentageBps: accounts.minPaymentRulePercentageBps,
-      minPaymentRuleIncludesInterest: accounts.minPaymentRuleIncludesInterest,
-      promoEndDate: accounts.promoEndDate,
-      promoDurationMonths: accounts.promoDurationMonths,
-      accountOpenDate: accounts.accountOpenDate,
-      notes: accounts.notes,
-      createdAt: accounts.createdAt,
-    }).from(accounts).where(eq(accounts.userId, userId));
+    return await db.select().from(accounts).where(eq(accounts.userId, userId));
   }
 
   async getAccount(id: string): Promise<Account | undefined> {
-    const [account] = await db.select({
-      id: accounts.id,
-      userId: accounts.userId,
-      lenderName: accounts.lenderName,
-      accountType: accounts.accountType,
-      currentBalanceCents: accounts.currentBalanceCents,
-      aprStandardBps: accounts.aprStandardBps,
-      paymentDueDay: accounts.paymentDueDay,
-      minPaymentRuleFixedCents: accounts.minPaymentRuleFixedCents,
-      minPaymentRulePercentageBps: accounts.minPaymentRulePercentageBps,
-      minPaymentRuleIncludesInterest: accounts.minPaymentRuleIncludesInterest,
-      promoEndDate: accounts.promoEndDate,
-      promoDurationMonths: accounts.promoDurationMonths,
-      accountOpenDate: accounts.accountOpenDate,
-      notes: accounts.notes,
-      createdAt: accounts.createdAt,
-    }).from(accounts).where(eq(accounts.id, id));
+    const [account] = await db.select().from(accounts).where(eq(accounts.id, id));
     return account || undefined;
   }
 
@@ -124,6 +107,74 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAccount(id: string): Promise<void> {
     await db.delete(accounts).where(eq(accounts.id, id));
+  }
+
+  async getAccountsWithBucketsByUserId(userId: string): Promise<AccountWithBuckets[]> {
+    const accountList = await db.select().from(accounts).where(eq(accounts.userId, userId));
+    const result: AccountWithBuckets[] = [];
+    for (const account of accountList) {
+      const buckets = await db.select().from(debtBuckets).where(eq(debtBuckets.accountId, account.id));
+      result.push({ ...account, buckets });
+    }
+    return result;
+  }
+
+  async getAccountWithBuckets(id: string): Promise<AccountWithBuckets | undefined> {
+    const [account] = await db.select().from(accounts).where(eq(accounts.id, id));
+    if (!account) return undefined;
+    const buckets = await db.select().from(debtBuckets).where(eq(debtBuckets.accountId, id));
+    return { ...account, buckets };
+  }
+
+  async createAccountWithBuckets(account: InsertAccount, buckets: BucketInput[]): Promise<AccountWithBuckets> {
+    const [newAccount] = await db.insert(accounts).values(account).returning();
+    const createdBuckets: DebtBucket[] = [];
+    for (const bucket of buckets) {
+      const [newBucket] = await db.insert(debtBuckets).values({ ...bucket, accountId: newAccount.id }).returning();
+      createdBuckets.push(newBucket);
+    }
+    return { ...newAccount, buckets: createdBuckets };
+  }
+
+  async updateAccountWithBuckets(id: string, updates: Partial<Account>, buckets?: InsertDebtBucket[]): Promise<AccountWithBuckets | undefined> {
+    const [updatedAccount] = await db.update(accounts).set(updates).where(eq(accounts.id, id)).returning();
+    if (!updatedAccount) return undefined;
+    
+    if (buckets !== undefined) {
+      await db.delete(debtBuckets).where(eq(debtBuckets.accountId, id));
+      const createdBuckets: DebtBucket[] = [];
+      for (const bucket of buckets) {
+        const [newBucket] = await db.insert(debtBuckets).values({ ...bucket, accountId: id }).returning();
+        createdBuckets.push(newBucket);
+      }
+      return { ...updatedAccount, buckets: createdBuckets };
+    }
+    
+    const existingBuckets = await db.select().from(debtBuckets).where(eq(debtBuckets.accountId, id));
+    return { ...updatedAccount, buckets: existingBuckets };
+  }
+
+  // Bucket methods
+  async getBucketsByAccountId(accountId: string): Promise<DebtBucket[]> {
+    return await db.select().from(debtBuckets).where(eq(debtBuckets.accountId, accountId));
+  }
+
+  async createBucket(bucket: InsertDebtBucket): Promise<DebtBucket> {
+    const [newBucket] = await db.insert(debtBuckets).values(bucket).returning();
+    return newBucket;
+  }
+
+  async updateBucket(id: string, updates: Partial<DebtBucket>): Promise<DebtBucket | undefined> {
+    const [bucket] = await db.update(debtBuckets).set(updates).where(eq(debtBuckets.id, id)).returning();
+    return bucket || undefined;
+  }
+
+  async deleteBucket(id: string): Promise<void> {
+    await db.delete(debtBuckets).where(eq(debtBuckets.id, id));
+  }
+
+  async deleteAllBucketsByAccountId(accountId: string): Promise<void> {
+    await db.delete(debtBuckets).where(eq(debtBuckets.accountId, accountId));
   }
 
   // Budget methods
@@ -210,6 +261,7 @@ class GuestStorageWrapper implements IStorage {
   private dbStorage: DatabaseStorage;
   private guestData: {
     accounts: Account[];
+    buckets: DebtBucket[];
     budget: Budget | null;
     preferences: Preference | null;
     plans: Plan[];
@@ -219,6 +271,7 @@ class GuestStorageWrapper implements IStorage {
     this.dbStorage = dbStorage;
     this.guestData = {
       accounts: [],
+      buckets: [],
       budget: null,
       preferences: null,
       plans: [],
@@ -287,9 +340,129 @@ class GuestStorageWrapper implements IStorage {
     const guestIdx = this.guestData.accounts.findIndex(a => a.id === id);
     if (guestIdx !== -1) {
       this.guestData.accounts.splice(guestIdx, 1);
+      this.guestData.buckets = this.guestData.buckets.filter(b => b.accountId !== id);
       return;
     }
     return this.dbStorage.deleteAccount(id);
+  }
+
+  async getAccountsWithBucketsByUserId(userId: string): Promise<AccountWithBuckets[]> {
+    if (this.isGuest(userId)) {
+      return this.guestData.accounts.map(acc => ({
+        ...acc,
+        buckets: this.guestData.buckets.filter(b => b.accountId === acc.id)
+      }));
+    }
+    return this.dbStorage.getAccountsWithBucketsByUserId(userId);
+  }
+
+  async getAccountWithBuckets(id: string): Promise<AccountWithBuckets | undefined> {
+    const guestAccount = this.guestData.accounts.find(a => a.id === id);
+    if (guestAccount) {
+      return {
+        ...guestAccount,
+        buckets: this.guestData.buckets.filter(b => b.accountId === id)
+      };
+    }
+    return this.dbStorage.getAccountWithBuckets(id);
+  }
+
+  async createAccountWithBuckets(account: InsertAccount, buckets: BucketInput[]): Promise<AccountWithBuckets> {
+    if (this.isGuest(account.userId)) {
+      const accountId = `guest-account-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newAccount = { 
+        ...account, 
+        id: accountId,
+        createdAt: new Date() 
+      } as Account;
+      this.guestData.accounts.push(newAccount);
+      
+      const createdBuckets: DebtBucket[] = buckets.map((bucket, idx) => ({
+        ...bucket,
+        id: `guest-bucket-${Date.now()}-${idx}`,
+        accountId,
+        createdAt: new Date()
+      } as DebtBucket));
+      this.guestData.buckets.push(...createdBuckets);
+      
+      return { ...newAccount, buckets: createdBuckets };
+    }
+    return this.dbStorage.createAccountWithBuckets(account, buckets);
+  }
+
+  async updateAccountWithBuckets(id: string, updates: Partial<Account>, buckets?: InsertDebtBucket[]): Promise<AccountWithBuckets | undefined> {
+    const guestIdx = this.guestData.accounts.findIndex(a => a.id === id);
+    if (guestIdx !== -1) {
+      this.guestData.accounts[guestIdx] = { ...this.guestData.accounts[guestIdx], ...updates };
+      
+      if (buckets !== undefined) {
+        this.guestData.buckets = this.guestData.buckets.filter(b => b.accountId !== id);
+        const createdBuckets: DebtBucket[] = buckets.map((bucket, idx) => ({
+          ...bucket,
+          id: `guest-bucket-${Date.now()}-${idx}`,
+          accountId: id,
+          createdAt: new Date()
+        } as DebtBucket));
+        this.guestData.buckets.push(...createdBuckets);
+        return { ...this.guestData.accounts[guestIdx], buckets: createdBuckets };
+      }
+      
+      return {
+        ...this.guestData.accounts[guestIdx],
+        buckets: this.guestData.buckets.filter(b => b.accountId === id)
+      };
+    }
+    return this.dbStorage.updateAccountWithBuckets(id, updates, buckets);
+  }
+
+  // Bucket methods
+  async getBucketsByAccountId(accountId: string): Promise<DebtBucket[]> {
+    const isGuestAccount = this.guestData.accounts.some(a => a.id === accountId);
+    if (isGuestAccount) {
+      return this.guestData.buckets.filter(b => b.accountId === accountId);
+    }
+    return this.dbStorage.getBucketsByAccountId(accountId);
+  }
+
+  async createBucket(bucket: InsertDebtBucket): Promise<DebtBucket> {
+    const isGuestAccount = this.guestData.accounts.some(a => a.id === bucket.accountId);
+    if (isGuestAccount) {
+      const newBucket = {
+        ...bucket,
+        id: `guest-bucket-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        createdAt: new Date()
+      } as DebtBucket;
+      this.guestData.buckets.push(newBucket);
+      return newBucket;
+    }
+    return this.dbStorage.createBucket(bucket);
+  }
+
+  async updateBucket(id: string, updates: Partial<DebtBucket>): Promise<DebtBucket | undefined> {
+    const guestIdx = this.guestData.buckets.findIndex(b => b.id === id);
+    if (guestIdx !== -1) {
+      this.guestData.buckets[guestIdx] = { ...this.guestData.buckets[guestIdx], ...updates };
+      return this.guestData.buckets[guestIdx];
+    }
+    return this.dbStorage.updateBucket(id, updates);
+  }
+
+  async deleteBucket(id: string): Promise<void> {
+    const guestIdx = this.guestData.buckets.findIndex(b => b.id === id);
+    if (guestIdx !== -1) {
+      this.guestData.buckets.splice(guestIdx, 1);
+      return;
+    }
+    return this.dbStorage.deleteBucket(id);
+  }
+
+  async deleteAllBucketsByAccountId(accountId: string): Promise<void> {
+    const isGuestAccount = this.guestData.accounts.some(a => a.id === accountId);
+    if (isGuestAccount) {
+      this.guestData.buckets = this.guestData.buckets.filter(b => b.accountId !== accountId);
+      return;
+    }
+    return this.dbStorage.deleteAllBucketsByAccountId(accountId);
   }
 
   // Budget methods - use memory for guest
