@@ -50,6 +50,114 @@ const BUCKET_TYPE_LABELS: Record<string, string> = {
   [BucketType.CUSTOM]: "Custom",
 };
 
+interface CurrencyInputProps {
+  valueCents: number;
+  onValueChange: (cents: number) => void;
+  currencySymbol: string;
+  placeholder?: string;
+  className?: string;
+  "data-testid"?: string;
+}
+
+function CurrencyInput({ valueCents, onValueChange, currencySymbol, placeholder = "0.00", className, "data-testid": testId }: CurrencyInputProps) {
+  const [localValue, setLocalValue] = useState("");
+  const [isFocused, setIsFocused] = useState(false);
+
+  const displayValue = isFocused 
+    ? localValue 
+    : (valueCents ? (valueCents / 100).toFixed(2) : "");
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val === "" || /^[0-9]*\.?[0-9]*$/.test(val)) {
+      setLocalValue(val);
+    }
+  };
+
+  const handleFocus = () => {
+    setLocalValue(valueCents ? (valueCents / 100).toFixed(2) : "");
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    if (localValue.trim() === "") {
+      onValueChange(0);
+    } else {
+      const cents = parseCurrencyToCents(localValue);
+      onValueChange(cents);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+        {currencySymbol}
+      </span>
+      <Input
+        type="text"
+        inputMode="decimal"
+        placeholder={placeholder}
+        value={displayValue}
+        onChange={handleChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        className={cn("font-mono pl-6", className)}
+        data-testid={testId}
+      />
+    </div>
+  );
+}
+
+interface PercentageInputProps {
+  valueBps: number;
+  onValueChange: (bps: number) => void;
+  placeholder?: string;
+  className?: string;
+  "data-testid"?: string;
+}
+
+function PercentageInput({ valueBps, onValueChange, placeholder = "0", className, "data-testid": testId }: PercentageInputProps) {
+  const [localValue, setLocalValue] = useState("");
+  const [isFocused, setIsFocused] = useState(false);
+
+  const displayValue = isFocused 
+    ? localValue 
+    : (valueBps ? (valueBps / 100).toFixed(2) : "0");
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val === "" || /^[0-9]*\.?[0-9]*$/.test(val)) {
+      setLocalValue(val);
+    }
+  };
+
+  const handleFocus = () => {
+    setLocalValue(valueBps ? (valueBps / 100).toFixed(2) : "0");
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    const bps = formatBpsInput(localValue || "0");
+    onValueChange(bps);
+  };
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      placeholder={placeholder}
+      value={displayValue}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      className={cn("font-mono", className)}
+      data-testid={testId}
+    />
+  );
+}
+
 export function StatementWizard({ open, onOpenChange, account }: StatementWizardProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -567,34 +675,24 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="space-y-1">
                         <Label className="text-xs text-muted-foreground">Balance</Label>
-                        <div className="relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                            {getCurrencySymbol()}
-                          </span>
-                          <Input
-                            type="text"
-                            placeholder="0.00"
-                            value={bucket.balanceCents ? (bucket.balanceCents / 100).toFixed(2) : ""}
-                            onChange={(e) => updateBucket(bucket.id, { 
-                              balanceCents: parseCurrencyToCents(e.target.value) 
-                            })}
-                            className="h-10 font-mono pl-6"
-                            data-testid={`input-bucket-balance-${index}`}
-                          />
-                        </div>
+                        <CurrencyInput
+                          valueCents={bucket.balanceCents}
+                          onValueChange={(cents) => updateBucket(bucket.id, { balanceCents: cents })}
+                          currencySymbol={getCurrencySymbol()}
+                          className="h-10"
+                          data-testid={`input-bucket-balance-${index}`}
+                        />
                       </div>
                       
                       <div className="space-y-1">
                         <Label className="text-xs text-muted-foreground">APR (%)</Label>
-                        <Input
-                          type="text"
-                          placeholder="0"
-                          value={bucket.aprBps ? (bucket.aprBps / 100).toFixed(2) : "0"}
-                          onChange={(e) => updateBucket(bucket.id, { 
-                            aprBps: formatBpsInput(e.target.value),
-                            isPromo: parseFloat(e.target.value) === 0
+                        <PercentageInput
+                          valueBps={bucket.aprBps}
+                          onValueChange={(bps) => updateBucket(bucket.id, { 
+                            aprBps: bps,
+                            isPromo: bps === 0
                           })}
-                          className="h-10 font-mono"
+                          className="h-10"
                           data-testid={`input-bucket-apr-${index}`}
                         />
                       </div>
