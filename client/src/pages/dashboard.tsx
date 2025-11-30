@@ -5,7 +5,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2, RefreshCw } from "lucide-react";
+import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
@@ -173,6 +173,30 @@ export default function Dashboard() {
     },
   });
 
+  // Delete plan mutation
+  const deletePlanMutation = useMutation({
+    mutationFn: async () => {
+      if (!plan?.id) throw new Error("No plan to delete");
+      return await apiRequest("POST", `/api/plans/${plan.id}/delete`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/plans"] });
+      toast({
+        title: "Plan deleted",
+        description: "Your payment plan has been deleted. Your account balances remain unchanged.",
+      });
+      setLocation("/accounts");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Delete failed",
+        description: error.message || "Could not delete plan.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const planData = plan?.planData as MonthlyResult[] | undefined;
   
   // Calculate summary statistics
@@ -301,11 +325,26 @@ export default function Dashboard() {
       </header>
 
       <main className="container mx-auto max-w-7xl px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold">Your Debt Payoff Plan</h1>
-          <p className="text-muted-foreground mt-2">
-            Optimized to {plan.status === "OPTIMAL" ? "minimize your total interest" : "work within your constraints"}
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-4xl font-bold">Your Debt Payoff Plan</h1>
+            <p className="text-muted-foreground mt-2">
+              Optimized to {plan.status === "OPTIMAL" ? "minimize your total interest" : "work within your constraints"}
+            </p>
+          </div>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (confirm("Are you sure you want to delete this plan? Your accounts and balances will not be affected. You can generate a new plan anytime.")) {
+                deletePlanMutation.mutate();
+              }
+            }}
+            disabled={deletePlanMutation.isPending}
+            data-testid="button-delete-plan"
+          >
+            <Trash2 className={`mr-2 h-4 w-4 ${deletePlanMutation.isPending ? "animate-spin" : ""}`} />
+            {deletePlanMutation.isPending ? "Deleting..." : "Delete Plan"}
+          </Button>
         </div>
 
         {/* Summary Cards */}

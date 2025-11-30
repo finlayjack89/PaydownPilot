@@ -941,6 +941,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/plans/:id/delete", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const planId = req.params.id;
+      
+      // Verify the plan belongs to the user
+      const plans = await storage.getPlansByUserId(userId);
+      const plan = plans.find(p => p.id === planId);
+      
+      if (!plan) {
+        return res.status(404).send({ message: "Plan not found" });
+      }
+
+      // Delete the plan (accounts are NOT affected)
+      await storage.deletePlan(planId);
+      
+      res.json({ message: "Plan deleted successfully. Your accounts remain unchanged." });
+    } catch (error: any) {
+      res.status(500).send({ message: error.message || "Failed to delete plan" });
+    }
+  });
+
   app.post("/api/plans/explain", requireAuth, async (req, res) => {
     try {
       const { question, planData, explanation } = req.body;
