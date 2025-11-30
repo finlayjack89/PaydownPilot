@@ -50,6 +50,7 @@ export interface IStorage {
   getPlansByUserId(userId: string): Promise<Plan[]>;
   getLatestPlan(userId: string): Promise<Plan | undefined>;
   createPlan(plan: InsertPlan): Promise<Plan>;
+  deletePlan(id: string): Promise<void>;
 
   // Lender Rules methods
   getLenderRule(lenderName: string, country: string): Promise<LenderRule | undefined>;
@@ -224,6 +225,10 @@ export class DatabaseStorage implements IStorage {
   async createPlan(plan: InsertPlan): Promise<Plan> {
     const [newPlan] = await db.insert(plans).values(plan).returning();
     return newPlan;
+  }
+
+  async deletePlan(id: string): Promise<void> {
+    await db.delete(plans).where(eq(plans.id, id));
   }
 
   // Lender Rules methods
@@ -521,6 +526,15 @@ class GuestStorageWrapper implements IStorage {
       return newPlan;
     }
     return this.dbStorage.createPlan(plan);
+  }
+
+  async deletePlan(id: string): Promise<void> {
+    const planToDelete = this.guestData.plans.find(p => p.id === id);
+    if (planToDelete) {
+      this.guestData.plans = this.guestData.plans.filter(p => p.id !== id);
+      return;
+    }
+    return this.dbStorage.deletePlan(id);
   }
 
   // Lender Rules - pass through to database (shared)

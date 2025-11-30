@@ -5,7 +5,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2 } from "lucide-react";
+import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2, RefreshCw } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
@@ -144,6 +144,35 @@ export default function Dashboard() {
     },
   });
 
+  // Refresh dashboard mutation
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/plans/validate", {});
+    },
+    onSuccess: (data: any) => {
+      if (data.deleted) {
+        queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
+        toast({
+          title: "Plan deleted",
+          description: data.message,
+        });
+      } else {
+        toast({
+          title: "Dashboard updated",
+          description: "Your dashboard is up to date with your current accounts.",
+        });
+      }
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Refresh failed",
+        description: error.message || "Could not refresh dashboard.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const planData = plan?.planData as MonthlyResult[] | undefined;
   
   // Calculate summary statistics
@@ -241,6 +270,15 @@ export default function Dashboard() {
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
           <Logo />
           <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending}
+              data-testid="button-refresh-dashboard"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${refreshMutation.isPending ? "animate-spin" : ""}`} />
+              {refreshMutation.isPending ? "Refreshing..." : "Refresh Dashboard"}
+            </Button>
             <Button
               variant="outline"
               onClick={() => setLocation("/accounts")}

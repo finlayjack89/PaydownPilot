@@ -903,6 +903,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/plans/validate", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const latestPlan = await storage.getLatestPlan(userId);
+      
+      if (!latestPlan || !latestPlan.planData) {
+        return res.json({ message: "No plan to validate", deleted: false });
+      }
+
+      // Get all current accounts
+      const accounts = await storage.getAccountsByUserId(userId);
+      const currentLenderNames = accounts.map(acc => acc.lenderName);
+
+      // Extract lender names from plan
+      const planLenderNames = Array.from(
+        new Set((latestPlan.planData as any[]).map((r: any) => r.lenderName))
+      );
+
+      // Check if all lenders in the plan still have accounts
+      const allLendersExist = planLenderNames.every(lender => 
+        currentLenderNames.includes(lender)
+      );
+
+      // If any lender no longer exists, delete the plan
+      if (!allLendersExist) {
+        await storage.deletePlan(latestPlan.id);
+        return res.json({ 
+          message: "Plan was outdated and has been deleted. Some accounts were removed from your portfolio.",
+          deleted: true 
+        });
+      }
+
+      res.json({ message: "Plan is current", deleted: false });
+    } catch (error: any) {
+      res.status(500).send({ message: error.message || "Failed to validate plan" });
+    }
+  });
+
   app.post("/api/plans/explain", requireAuth, async (req, res) => {
     try {
       const { question, planData, explanation } = req.body;
