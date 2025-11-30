@@ -16,9 +16,11 @@ try:
         DebtPortfolio as SolverDebtPortfolio, # Rename to avoid clash
         Account as SolverAccount,
         MinPaymentRule as SolverMinPaymentRule,
+        DebtBucket as SolverDebtBucket,
         Budget as SolverBudget,
         UserPreferences as SolverUserPreferences, # <-- This is the alias
         AccountType,
+        BucketType,
         OptimizationStrategy,
         PaymentShape,
         MonthlyResult as SolverMonthlyResult # Keep solver's MonthlyResult separate
@@ -55,11 +57,26 @@ def convert_schema_to_solver_portfolio(
         # Convert the nested Pydantic MinPaymentRule to the solver's dataclass
         solver_rule = SolverMinPaymentRule(**acc_schema.min_payment_rule.model_dump())
         
-        # Exclude the rule from the main account data to avoid TypeError
-        acc_data = acc_schema.model_dump(exclude={'min_payment_rule'})
+        # Convert buckets if present
+        # Filter bucket_data to only include valid SolverDebtBucket dataclass fields
+        # to avoid TypeError when database fields like "id" are present
+        solver_bucket_fields = {'bucket_type', 'balance_cents', 'apr_bps', 'is_promo', 'promo_expiry_date', 'label'}
+        solver_buckets = []
+        for bucket_schema in acc_schema.buckets:
+            bucket_data = bucket_schema.model_dump()
+            # Filter to only include fields that exist in the solver's DebtBucket dataclass
+            filtered_bucket_data = {k: v for k, v in bucket_data.items() if k in solver_bucket_fields}
+            solver_buckets.append(SolverDebtBucket(**filtered_bucket_data))
         
-        # Create the solver's Account dataclass
-        solver_accounts.append(SolverAccount(min_payment_rule=solver_rule, **acc_data))
+        # Exclude the rule and buckets from the main account data to avoid TypeError
+        acc_data = acc_schema.model_dump(exclude={'min_payment_rule', 'buckets'})
+        
+        # Create the solver's Account dataclass with buckets
+        solver_accounts.append(SolverAccount(
+            min_payment_rule=solver_rule, 
+            buckets=solver_buckets,
+            **acc_data
+        ))
 
     # Convert the Budget schema to its dataclass
     solver_budget = SolverBudget(**portfolio_schema.budget.model_dump())

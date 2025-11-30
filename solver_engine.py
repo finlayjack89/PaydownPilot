@@ -22,6 +22,17 @@ class AccountType(str, Enum):
     BNPL = "Buy Now, Pay Later"
     LOAN = "Loan"
 
+class BucketType(str, Enum):
+    """
+    Defines the type of balance segment within a credit card.
+    UK credit cards commonly have multiple balances at different APRs.
+    """
+    PURCHASES = "Purchases"
+    BALANCE_TRANSFER = "Balance Transfer"
+    MONEY_TRANSFER = "Money Transfer"
+    CASH_ADVANCE = "Cash Advance"
+    CUSTOM = "Custom"
+
 class OptimizationStrategy(str, Enum):
     """
     Defines the user's primary goal for the repayment plan.
@@ -51,10 +62,42 @@ class MinPaymentRule:
     includes_interest: bool = False # Flag for the UK-specific rule
 
 @dataclass
+class DebtBucket:
+    """
+    Represents a balance segment within a credit card account.
+    UK credit cards often have multiple balances at different APRs:
+    - Balance transfers at 0% promotional rate
+    - Purchases at standard APR (e.g., 24.9%)
+    - Cash advances at higher APR (e.g., 39.9%)
+    """
+    bucket_type: BucketType
+    balance_cents: int
+    apr_bps: int  # APR in basis points (e.g., 2490 for 24.9%)
+    is_promo: bool = False
+    promo_expiry_date: Optional[date] = None
+    label: Optional[str] = None  # Optional user-friendly label
+    
+    def __post_init__(self):
+        if self.balance_cents < 0:
+            raise ValueError("'balance_cents' must not be negative.")
+        if self.is_promo and self.promo_expiry_date is None:
+            # If marked as promo but no expiry, it's effectively 0% forever (unlikely but allowed)
+            pass
+
+@dataclass
 class Account:
     """
     Represents a single credit account, such as a credit card, BNPL, or loan.
-All monetary values are stored in integer cents.
+    All monetary values are stored in integer cents.
+    
+    For Credit Cards with multiple buckets:
+    - The buckets list contains individual balance segments at different APRs
+    - current_balance_cents should equal sum of bucket balance_cents
+    - apr_standard_bps is used as fallback for non-bucket accounts
+    
+    For BNPL/Loans or simple credit cards:
+    - buckets list is empty or contains a single bucket
+    - Uses apr_standard_bps and promo fields directly
     """
     # --- Fields without default values ---
     lender_name: str
@@ -63,10 +106,14 @@ All monetary values are stored in integer cents.
     apr_standard_bps: int
     payment_due_day: int
     
-    # NEW: Replaces the old simple minimum_payment_cents
+    # Minimum payment rule for this account
     min_payment_rule: MinPaymentRule 
     
     # --- Fields with default values ---
+    # Buckets for credit cards with multiple balance segments
+    buckets: List[DebtBucket] = field(default_factory=list)
+    
+    # Legacy promo fields - used when buckets is empty
     promo_end_date: Optional[date] = None
     promo_duration_months: Optional[int] = None
     account_open_date: date = field(default_factory=date.today)
@@ -74,7 +121,7 @@ All monetary values are stored in integer cents.
     notes: Optional[str] = None
     
     def __post_init__(self):
-        """Validate that exactly one promotional field is provided."""
+        """Validate account data."""
         if self.promo_end_date is not None and self.promo_duration_months is not None:
             raise ValueError("Provide either 'promo_end_date' or 'promo_duration_months', not both.")
         if self.current_balance_cents < 0:
@@ -82,6 +129,59 @@ All monetary values are stored in integer cents.
        
         if not (1 <= self.payment_due_day <= 28):
             raise ValueError("'payment_due_day' must be between 1 and 28 for simplicity.")
+        
+        # Validate buckets if present
+        if self.buckets:
+            bucket_total = sum(b.balance_cents for b in self.buckets)
+            if abs(bucket_total - self.current_balance_cents) > 1:  # 1 cent tolerance for rounding
+                raise ValueError(
+                    f"Sum of bucket balances ({bucket_total}) must equal current_balance_cents ({self.current_balance_cents})"
+                )
+    
+    def get_effective_apr_bps(self, current_date: Optional[date] = None) -> int:
+        """
+        Get the weighted average APR across all buckets, or standard APR if no buckets.
+        This is used for account-level optimization when buckets exist.
+        
+        For promo buckets:
+        - If current_date is before promo_expiry_date, that bucket contributes 0 APR
+        - Once promo expires, the bucket reverts to the account's standard APR
+          (not the bucket's stated apr_bps, which may be 0 for balance transfers)
+        """
+        if not self.buckets or self.current_balance_cents == 0:
+            return self.apr_standard_bps
+        
+        weighted_sum = 0
+        for bucket in self.buckets:
+            # Determine effective APR for this bucket at the current date
+            if bucket.is_promo:
+                if bucket.promo_expiry_date and current_date and current_date <= bucket.promo_expiry_date:
+                    # Promo bucket still in promo period: 0% APR
+                    bucket_apr = 0
+                else:
+                    # Promo expired or no date context: use account's standard APR
+                    # Note: When a 0% balance transfer promo ends, UK banks typically
+                    # apply the standard purchase rate to that balance
+                    bucket_apr = self.apr_standard_bps
+            else:
+                # Non-promo bucket: use stated APR
+                bucket_apr = bucket.apr_bps
+            
+            weighted_sum += bucket.balance_cents * bucket_apr
+        
+        return weighted_sum // self.current_balance_cents
+    
+    def get_highest_apr_bps(self) -> int:
+        """Get the highest APR across all buckets, or standard APR if no buckets."""
+        if not self.buckets:
+            return self.apr_standard_bps
+        return max(b.apr_bps for b in self.buckets)
+    
+    def has_promo_buckets(self) -> bool:
+        """Check if any buckets have promotional (0% or low) rates."""
+        return any(b.is_promo for b in self.buckets)
+
+
 @dataclass
 class Budget:
     """
@@ -225,12 +325,28 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
     print(f"Created {total_vars} variables across {max_months} months.")
     
     # --- Pre-calculate promo end month index for all accounts ---
+    # For accounts with buckets, the "promo end" is when the LAST promo bucket expires
+    # This is used for strategies like PAY_OFF_IN_PROMO
     print("...calculating promotional period end dates...")
     promo_end_month_map: Dict[str, int] = {}
     for account in portfolio.accounts:
         promo_month_index = -1 # Default: no promo
         
-        if account.promo_end_date:
+        # Check bucket-level promos first (takes precedence)
+        if account.buckets and account.has_promo_buckets():
+            # Find the latest promo expiry date among all promo buckets
+            latest_promo_date = None
+            for bucket in account.buckets:
+                if bucket.is_promo and bucket.promo_expiry_date:
+                    if latest_promo_date is None or bucket.promo_expiry_date > latest_promo_date:
+                        latest_promo_date = bucket.promo_expiry_date
+            
+            if latest_promo_date:
+                delta = relativedelta(latest_promo_date, portfolio.plan_start_date)
+                promo_month_index = delta.years * 12 + delta.months
+        
+        # Fall back to legacy account-level promo fields
+        elif account.promo_end_date:
             # Calculate month difference
             delta = relativedelta(account.promo_end_date, portfolio.plan_start_date)
             promo_month_index = delta.years * 12 + delta.months
@@ -302,7 +418,11 @@ def generate_payment_plan(portfolio: DebtPortfolio) -> Optional[List[MonthlyResu
             
             else:
                 # --- STANDARD PERIOD: Calculate interest ---
-                apr_bps_for_month = account.apr_standard_bps
+                # Use effective APR which accounts for bucket-level rates if present
+                # This is the weighted average APR across all buckets, or standard APR if no buckets
+                # Pass current month date to properly handle per-bucket promo expiry
+                current_month_date = portfolio.plan_start_date + relativedelta(months=month)
+                apr_bps_for_month = account.get_effective_apr_bps(current_month_date) if account.buckets else account.apr_standard_bps
             
                 # Use the pre-calculated, absolute max domain for numerators
                 numerator_var = model.NewIntVar(0, max_numerator_domain, f'num_{key}')

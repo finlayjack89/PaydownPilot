@@ -18,6 +18,13 @@ class AccountType(str, Enum):
     BNPL = "Buy Now, Pay Later"
     LOAN = "Loan"
 
+class BucketType(str, Enum):
+    PURCHASES = "Purchases"
+    BALANCE_TRANSFER = "Balance Transfer"
+    MONEY_TRANSFER = "Money Transfer"
+    CASH_ADVANCE = "Cash Advance"
+    CUSTOM = "Custom"
+
 class OptimizationStrategy(str, Enum):
     MINIMIZE_TOTAL_INTEREST = "Minimize Total Interest"
     MINIMIZE_MONTHLY_SPEND = "Minimize Monthly Spend"
@@ -37,14 +44,41 @@ class MinPaymentRule(BaseModel):
     percentage_bps: int = Field(default=0, ge=0)
     includes_interest: bool = False
 
+
+class DebtBucket(BaseModel):
+    """
+    Pydantic model for a balance segment within a credit card.
+    UK credit cards often have multiple balances at different APRs.
+    """
+    bucket_type: BucketType
+    balance_cents: int = Field(..., ge=0)
+    apr_bps: int = Field(..., ge=0)
+    is_promo: bool = False
+    promo_expiry_date: Optional[date] = None
+    label: Optional[str] = None
+
+
 class Account(BaseModel):
-    """Pydantic model representing a single credit account."""
+    """
+    Pydantic model representing a single credit account.
+    
+    For Credit Cards with multiple buckets:
+    - The buckets list contains individual balance segments at different APRs
+    - current_balance_cents should equal sum of bucket balance_cents
+    
+    For BNPL/Loans or simple credit cards:
+    - buckets list is empty
+    - Uses apr_standard_bps and promo fields directly
+    """
     lender_name: str = Field(..., min_length=1)
     account_type: AccountType
     current_balance_cents: int = Field(..., ge=0)
     apr_standard_bps: int = Field(..., ge=0)
     payment_due_day: int = Field(..., ge=1, le=28)
     min_payment_rule: MinPaymentRule
+    
+    # Buckets for credit cards with multiple balance segments
+    buckets: List[DebtBucket] = Field(default_factory=list)
 
     promo_end_date: Optional[date] = None
     promo_duration_months: Optional[int] = Field(default=None, ge=1)
@@ -54,9 +88,24 @@ class Account(BaseModel):
 
     @model_validator(mode='after')
     def check_promo_mutual_exclusion(self) -> 'Account':
-        """Ensure only one promo field is set."""
+        """Ensure only one promo field is set, bucket totals match, and buckets only for credit cards."""
         if self.promo_end_date is not None and self.promo_duration_months is not None:
             raise ValueError("Provide either 'promo_end_date' or 'promo_duration_months', not both.")
+        
+        # Validate buckets are only allowed for CREDIT_CARD accounts
+        if self.buckets and self.account_type != AccountType.CREDIT_CARD:
+            raise ValueError(
+                f"Buckets are only allowed for Credit Card accounts. "
+                f"Account type '{self.account_type.value}' cannot have buckets."
+            )
+        
+        # Validate buckets total matches account balance
+        if self.buckets:
+            bucket_total = sum(b.balance_cents for b in self.buckets)
+            if abs(bucket_total - self.current_balance_cents) > 1:  # 1 cent tolerance
+                raise ValueError(
+                    f"Sum of bucket balances ({bucket_total}) must equal current_balance_cents ({self.current_balance_cents})"
+                )
         return self
 
 class Budget(BaseModel):

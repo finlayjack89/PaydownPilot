@@ -22,9 +22,16 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Storage
 - **Database**: PostgreSQL (Neon serverless) with WebSocket support, Drizzle ORM.
-- **Schema Design**: `users`, `accounts`, `budgets`, `preferences`, `plans`, `lenderRules`, `plaidItems`.
+- **Schema Design**: `users`, `accounts`, `debt_buckets`, `budgets`, `preferences`, `plans`, `lenderRules`, `plaidItems`.
 - **Key Data Patterns**: Monetary values in cents (integers), percentages in basis points (bps), JSONB for nested data, cascade deletes, encrypted sensitive data (Plaid tokens).
 - **Security**: Plaid access tokens encrypted with AES-256-GCM using ENCRYPTION_SECRET environment variable.
+
+### Debt Buckets (UK Credit Card Feature)
+- **Purpose**: UK credit cards often have multiple balance segments at different APRs (0% balance transfers, 24.9% purchases, 39.9% cash advances). The bucket system allows users to track these separately for accurate interest calculations and payment prioritization.
+- **Bucket Types**: PURCHASES, BALANCE_TRANSFER, MONEY_TRANSFER, CASH_ADVANCE, CUSTOM.
+- **Data Model**: Each bucket has `balanceCents`, `aprBps`, `isPromo`, `promoExpiryDate`, and `label`. Bucket totals must equal the account's `currentBalanceCents`.
+- **Solver Integration**: The Python solver uses weighted-average APR across buckets for interest calculations and respects bucket-level promo periods. UK payment allocation rules apply (minimum payments first, then highest APR buckets).
+- **UI Flow**: 3-step Statement Wizard (Headline → Split Decision → Bucket Builder) guides users through creating bucket-enabled credit card accounts. Dashboard tiles show colored bucket segments with tooltips.
 
 ### Python Backend Integration
 - **Setup**: FastAPI backend (`main.py`, `solver_engine.py`, `schemas.py`) runs as a child process of the Node.js server (port 8000).
