@@ -48,7 +48,12 @@ export default function Dashboard() {
   });
 
   const { data: accounts = [] } = useQuery({
-    queryKey: ["/api/accounts"],
+    queryKey: ["/api/accounts", "withBuckets=true"],
+    queryFn: async () => {
+      const response = await fetch("/api/accounts?withBuckets=true", { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch accounts");
+      return response.json();
+    },
   });
 
   const { data: budget } = useQuery({

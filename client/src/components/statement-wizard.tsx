@@ -155,6 +155,7 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
       }
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts", "withBuckets=true"] });
       queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
       toast({
         title: isEditing ? "Account updated" : "Account added",

@@ -8,17 +8,24 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Plus, CreditCard, TrendingDown } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
-import type { Account } from "@shared/schema";
+import type { Account, DebtBucket } from "@shared/schema";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { AccountTile } from "@/components/account-tile";
+
+type AccountWithBuckets = Account & { buckets?: DebtBucket[] };
 
 export default function Accounts() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-  const { data: accounts = [], isLoading } = useQuery<Account[]>({
-    queryKey: ["/api/accounts"],
+  const { data: accounts = [], isLoading } = useQuery<AccountWithBuckets[]>({
+    queryKey: ["/api/accounts", "withBuckets=true"],
+    queryFn: async () => {
+      const response = await fetch("/api/accounts?withBuckets=true", { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch accounts");
+      return response.json();
+    },
   });
 
   const totalDebt = accounts.reduce((sum, acc) => sum + acc.currentBalanceCents, 0);

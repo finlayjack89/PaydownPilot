@@ -140,6 +140,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
       }
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts", "withBuckets=true"] });
       queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
       toast({
         title: isEditing ? "Account updated" : "Account added",
@@ -226,6 +227,7 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
         }
       }
 
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts", "withBuckets=true"] });
       queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
       setIsLoadingPlaid(false);
 
