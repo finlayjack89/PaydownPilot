@@ -341,11 +341,11 @@ export const insertBucketSchema = createInsertSchema(debtBuckets, {
 
 export const bucketRequestSchema = z.object({
   bucketType: z.nativeEnum(BucketType),
-  label: z.string().optional(),
+  label: z.string().nullable().optional(),
   balanceCents: z.number().int().min(0),
   aprBps: z.number().int().min(0),
   isPromo: z.boolean().default(false),
-  promoExpiryDate: z.string().optional(),
+  promoExpiryDate: z.string().nullable().optional(),
 });
 
 export const accountWithBucketsRequestSchema = z.object({
