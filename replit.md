@@ -11,7 +11,21 @@ Preferred communication style: Simple, everyday language.
 ### Frontend
 - **Technology Stack**: React with TypeScript (Vite), Wouter, TanStack Query, shadcn/ui (Radix UI), Tailwind CSS.
 - **Design Philosophy**: Hybrid design combining Material Design 3, Stripe, and Linear for trust, clarity, and efficient data entry. Typography uses Inter for UI and JetBrains Mono for financial values.
-- **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, and a dashboard with ECharts visualizations.
+- **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, dashboard with ECharts visualizations, Payment Calendar with interactive event highlighting.
+
+### Recent Updates (December 2024)
+- **AI Chat Improvements**: ChatGPT-style conversation history with user/assistant message bubbles; uses Claude Haiku for fast responses.
+- **Delete Plan Button**: Users can delete generated plans with confirmation dialog.
+- **Refresh Dashboard Button**: Manual refresh to fetch latest account and plan data.
+- **Account Bucket Breakdown**: Detailed view of credit card balance segments (buckets) showing individual APRs, promo periods, and balances.
+- **Plan Generation UX**: Smooth animated progress bar with percentage display; rotating finance tips with fade animation during generation.
+- **Payment Calendar Page**: Full-screen calendar at `/calendar` showing:
+  - Payment dates (blue) with hover tooltips showing accounts and amounts
+  - Budget change dates (amber) with old→new budget values
+  - Lump sum dates (green) with payment amounts
+  - Account payoff dates (purple) celebrating debt-free milestones
+  - Month/year navigation controls and "Today" button
+  - Upcoming events list for next 3 months
 
 ### Backend
 - **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication, Plaid SDK. Python backend (FastAPI) for the optimization engine.
