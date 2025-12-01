@@ -965,13 +965,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/plans/explain", requireAuth, async (req, res) => {
     try {
-      const { question, planData, explanation } = req.body;
+      const { question, planData, explanation, conversationHistory } = req.body;
 
       if (!question) {
         return res.status(400).send({ message: "Question is required" });
       }
 
-      const answer = await answerPlanQuestion(question, planData, explanation);
+      const answer = await answerPlanQuestion(question, planData, explanation, conversationHistory || []);
       
       res.json({ answer });
     } catch (error: any) {

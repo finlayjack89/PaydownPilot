@@ -3,13 +3,29 @@ import { useAccounts, useActivePlan } from "@/hooks/use-plan-data";
 import { getCurrentMonthIndex, getDashboardStats } from "@/lib/date-utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrendingDown, Calendar, DollarSign, Target, CreditCard, BarChart3, CheckCircle2 } from "lucide-react";
+import { TrendingDown, Calendar, DollarSign, Target, CreditCard, BarChart3, CheckCircle2, RefreshCw } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { FindMyBudgetButton } from "@/components/find-my-budget-button";
+import { queryClient } from "@/lib/queryClient";
+import { useState } from "react";
 
 export default function ActiveDashboard() {
-  const { data: accounts = [] } = useAccounts();
-  const { data: plan } = useActivePlan();
+  const { data: accounts = [], refetch: refetchAccounts } = useAccounts();
+  const { data: plan, refetch: refetchPlan } = useActivePlan();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetchAccounts(),
+        refetchPlan(),
+        queryClient.invalidateQueries({ queryKey: ["/api/budget"] }),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   if (!plan || !accounts) {
     return (
@@ -21,6 +37,12 @@ export default function ActiveDashboard() {
 
   const currentMonthIndex = getCurrentMonthIndex(plan);
   const stats = getDashboardStats(plan, accounts, currentMonthIndex);
+  
+  const nextPayoffAccountName = stats.nextAccountSettle === 0 
+    ? "Soon!" 
+    : plan.accountSchedules?.find(
+        (s) => s.payoffTimeMonths - (currentMonthIndex + 1) === stats.nextAccountSettle
+      )?.lenderName || "Unknown";
 
   const statCards = [
     {
@@ -40,7 +62,7 @@ export default function ActiveDashboard() {
     {
       title: "Next Account Payoff",
       value: stats.nextAccountSettle === 0 ? "This month!" : `${stats.nextAccountSettle} month${stats.nextAccountSettle !== 1 ? 's' : ''}`,
-      description: stats.nextAccountSettle === 0 ? "One account settling soon" : "Until next account is paid off",
+      description: nextPayoffAccountName,
       icon: Target,
       iconColor: "text-orange-500",
     },
@@ -74,6 +96,15 @@ export default function ActiveDashboard() {
             </p>
           </div>
           <div className="flex gap-3">
+            <Button 
+              variant="outline" 
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              data-testid="button-refresh-dashboard"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
             <Button asChild variant="outline" data-testid="button-browse-accounts">
               <Link href="/accounts">
                 <CreditCard className="h-4 w-4 mr-2" />

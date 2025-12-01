@@ -19,6 +19,7 @@ import Generate from "@/pages/generate";
 import HomePageWrapper from "@/pages/home-wrapper";
 import PlanOverview from "@/pages/plan-overview";
 import AccountDetail from "@/pages/account-detail";
+import PaymentCalendar from "@/pages/payment-calendar";
 import { type ReactNode } from "react";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -80,6 +81,7 @@ function Router() {
       <Route path="/preferences"><ProtectedRoute component={Preferences} /></Route>
       <Route path="/generate" component={GenerateRoute} />
       <Route path="/plan"><ProtectedRoute component={PlanOverview} /></Route>
+      <Route path="/calendar"><ProtectedRoute component={PaymentCalendar} /></Route>
       <Route path="/dashboard" component={DashboardRedirect} />
       <Route component={NotFound} />
     </Switch>

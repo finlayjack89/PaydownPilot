@@ -1,24 +1,75 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 
+const financeTips = [
+  "Paying off high-interest debt first can save you thousands over time.",
+  "Even small extra payments can significantly reduce your total interest.",
+  "The avalanche method targets high APR accounts first for maximum savings.",
+  "The snowball method pays off smallest balances first for quick wins.",
+  "Setting up automatic payments helps avoid late fees and missed payments.",
+  "Review your credit card statements monthly to catch errors early.",
+  "A 0% APR promotional period can be a powerful debt payoff tool.",
+  "Your credit score may improve as you pay down your utilization ratio.",
+  "Consolidating multiple debts can simplify your payment schedule.",
+  "Track your progress monthly to stay motivated on your debt-free journey.",
+];
+
 export default function Generate() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [progress, setProgress] = useState(0);
+  const [displayProgress, setDisplayProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Initializing...");
+  const [currentTipIndex, setCurrentTipIndex] = useState(0);
+  const [tipOpacity, setTipOpacity] = useState(1);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const tipIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const { data: accounts, isSuccess: accountsLoaded } = useQuery({ queryKey: ["/api/accounts"] });
   const { data: budget, isSuccess: budgetLoaded } = useQuery({ queryKey: ["/api/budget"] });
   const { data: preferences, isSuccess: preferencesLoaded } = useQuery({ queryKey: ["/api/preferences"] });
+
+  // Smooth progress animation effect
+  useEffect(() => {
+    if (displayProgress < progress) {
+      progressIntervalRef.current = setInterval(() => {
+        setDisplayProgress(prev => {
+          if (prev >= progress) {
+            if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+            return progress;
+          }
+          return prev + 1;
+        });
+      }, 50);
+    }
+    return () => {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    };
+  }, [progress, displayProgress]);
+
+  // Rotating tips effect with fade animation
+  useEffect(() => {
+    tipIntervalRef.current = setInterval(() => {
+      setTipOpacity(0);
+      setTimeout(() => {
+        setCurrentTipIndex(prev => (prev + 1) % financeTips.length);
+        setTipOpacity(1);
+      }, 500);
+    }, 5000);
+    
+    return () => {
+      if (tipIntervalRef.current) clearInterval(tipIntervalRef.current);
+    };
+  }, []);
 
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -158,7 +209,10 @@ export default function Generate() {
             {!generateMutation.isError && (
               <>
                 <p className="text-lg text-muted-foreground">{statusMessage}</p>
-                <Progress value={progress} className="w-full" />
+                <div className="space-y-2">
+                  <Progress value={displayProgress} className="w-full transition-all duration-200" />
+                  <p className="text-xs text-muted-foreground text-right">{displayProgress}%</p>
+                </div>
                 <p className="text-sm text-muted-foreground">
                   This may take up to 60 seconds...
                 </p>
@@ -203,12 +257,36 @@ export default function Generate() {
             <Card className="p-6">
               <h3 className="font-medium mb-3">What's happening now:</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>• Analyzing your {accounts?.length || 0} accounts</li>
-                <li>• Calculating minimum payments and interest charges</li>
-                <li>• Running optimization algorithms (120-month horizon)</li>
-                <li>• Finding the best payment strategy for your goals</li>
-                <li>• Generating month-by-month payment schedule</li>
+                <li className={displayProgress >= 10 ? "text-foreground" : ""}>
+                  {displayProgress >= 10 ? "✓" : "•"} Analyzing your {accounts?.length || 0} accounts
+                </li>
+                <li className={displayProgress >= 20 ? "text-foreground" : ""}>
+                  {displayProgress >= 20 ? "✓" : "•"} Calculating minimum payments and interest charges
+                </li>
+                <li className={displayProgress >= 40 ? "text-foreground" : ""}>
+                  {displayProgress >= 40 ? "✓" : "•"} Running optimization algorithms (120-month horizon)
+                </li>
+                <li className={displayProgress >= 60 ? "text-foreground" : ""}>
+                  {displayProgress >= 60 ? "✓" : "•"} Finding the best payment strategy for your goals
+                </li>
+                <li className={displayProgress >= 80 ? "text-foreground" : ""}>
+                  {displayProgress >= 80 ? "✓" : "•"} Generating month-by-month payment schedule
+                </li>
               </ul>
+            </Card>
+            
+            <Card className="p-6 bg-primary/5 border-primary/20">
+              <div 
+                className="flex items-start gap-3 transition-opacity duration-500"
+                style={{ opacity: tipOpacity }}
+                data-testid="finance-tip"
+              >
+                <Lightbulb className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-primary mb-1">Did you know?</p>
+                  <p className="text-sm text-muted-foreground">{financeTips[currentTipIndex]}</p>
+                </div>
+              </div>
             </Card>
           </div>
         )}

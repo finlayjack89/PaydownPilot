@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useRoute, Link, useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { 
   AlertDialog, 
   AlertDialogAction, 
@@ -31,15 +32,16 @@ import {
   DollarSign, 
   TrendingUp, 
   Edit2, 
-  Trash2 
+  Trash2,
+  Layers
 } from "lucide-react";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useAccounts, useActivePlan } from "@/hooks/use-plan-data";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { AccountTimeline } from "@/components/account-timeline";
-import type { Account } from "@shared/schema";
-import { AccountType } from "@shared/schema";
+import type { Account, DebtBucket } from "@shared/schema";
+import { AccountType, BucketType } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -57,6 +59,11 @@ export default function AccountDetail() {
   const account = accounts.find(acc => acc.id === accountId);
 
   const { data: plan, isLoading: isLoadingPlan } = useActivePlan();
+  
+  const { data: buckets = [] } = useQuery<DebtBucket[]>({
+    queryKey: [`/api/accounts/${accountId}/buckets`],
+    enabled: !!accountId,
+  });
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -312,6 +319,86 @@ export default function AccountDetail() {
             )}
           </CardContent>
         </Card>
+
+        {/* Bucket Breakdown Section */}
+        {buckets.length > 0 && (
+          <Card data-testid="card-bucket-breakdown">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Layers className="h-5 w-5" />
+                Balance Breakdown
+              </CardTitle>
+              <CardDescription>
+                View the different rate segments of your balance
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {buckets.map((bucket, index) => {
+                  const totalBalance = buckets.reduce((sum, b) => sum + b.balanceCents, 0);
+                  const percentage = totalBalance > 0 ? (bucket.balanceCents / totalBalance) * 100 : 0;
+                  const monthsLeft = bucket.promoExpiryDate 
+                    ? Math.max(0, Math.ceil((new Date(bucket.promoExpiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30)))
+                    : null;
+                  
+                  return (
+                    <div 
+                      key={bucket.id} 
+                      className="p-4 border rounded-lg space-y-3"
+                      data-testid={`bucket-${index}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold" data-testid={`bucket-name-${index}`}>
+                            {bucket.label || bucket.bucketType}
+                          </span>
+                          {bucket.isPromo && (
+                            <Badge variant="secondary" data-testid={`bucket-promo-badge-${index}`}>
+                              Promo Rate
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="font-mono font-bold" data-testid={`bucket-apr-${index}`}>
+                          {(bucket.aprBps / 100).toFixed(2)}% APR
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Balance</span>
+                        <span className="font-mono" data-testid={`bucket-balance-${index}`}>
+                          {formatCurrency(bucket.balanceCents, user?.currency || undefined)}
+                        </span>
+                      </div>
+                      
+                      <Progress value={percentage} className="h-2" />
+                      
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{percentage.toFixed(1)}% of total balance</span>
+                        {bucket.isPromo && bucket.promoExpiryDate && (
+                          <span className="flex items-center gap-1" data-testid={`bucket-expiry-${index}`}>
+                            <Calendar className="h-3 w-3" />
+                            {monthsLeft !== null && monthsLeft > 0 
+                              ? `${monthsLeft} month${monthsLeft !== 1 ? 's' : ''} left`
+                              : 'Expires soon'}
+                            {' '}({formatDate(bucket.promoExpiryDate)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                
+                {/* Total Summary */}
+                <div className="pt-4 border-t flex items-center justify-between">
+                  <span className="font-medium">Total Balance</span>
+                  <span className="font-mono font-bold text-lg" data-testid="bucket-total">
+                    {formatCurrency(buckets.reduce((sum, b) => sum + b.balanceCents, 0), user?.currency || undefined)}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Payment Timeline Visualization */}
         {plan && accountSchedule.length > 0 && (

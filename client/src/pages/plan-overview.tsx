@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2 } from "lucide-react";
+import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2, Trash2, Bot, User } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
@@ -17,6 +17,13 @@ import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 interface PlanSummary {
   totalDebt: number;
@@ -37,9 +44,10 @@ export default function Dashboard() {
   const [heuristicInterest, setHeuristicInterest] = useState(0);
   const [originalBudget, setOriginalBudget] = useState<number | null>(null);
   
-  // AI Assistant state
+  // AI Assistant state - ChatGPT-style conversation
   const [aiQuestion, setAiQuestion] = useState("");
-  const [aiResponse, setAiResponse] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const { data: plan, isLoading, isError, refetch } = useQuery({
     queryKey: ["/api/plans/latest"],
@@ -118,22 +126,50 @@ export default function Dashboard() {
     },
   });
 
-  // AI explanation mutation
+  // AI explanation mutation with conversation history
   const aiExplainMutation = useMutation({
     mutationFn: async (question: string) => {
       return await apiRequest("POST", "/api/plans/explain", {
         question,
         planData: plan?.planData,
         explanation: plan?.explanation,
+        conversationHistory: chatMessages,
       });
     },
-    onSuccess: (data: any) => {
-      setAiResponse(data.answer);
+    onSuccess: (data: any, question: string) => {
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'user', content: question },
+        { role: 'assistant', content: data.answer }
+      ]);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     },
     onError: (error: any) => {
       toast({
         title: "Question failed",
         description: error.message || "Could not get an answer.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete plan mutation
+  const deletePlanMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/plans/${plan?.id}/delete`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
+      toast({
+        title: "Plan deleted",
+        description: "Your plan has been deleted. Your accounts remain unchanged.",
+      });
+      setLocation("/accounts");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Delete failed",
+        description: error.message || "Could not delete the plan.",
         variant: "destructive",
       });
     },
@@ -252,6 +288,33 @@ export default function Dashboard() {
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" data-testid="button-delete-plan">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Plan
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this plan?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will remove your current payment plan. Your accounts and budget settings will remain unchanged.
+                    You can generate a new plan at any time.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deletePlanMutation.mutate()}
+                    disabled={deletePlanMutation.isPending}
+                    data-testid="button-confirm-delete"
+                  >
+                    {deletePlanMutation.isPending ? "Deleting..." : "Delete Plan"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <ThemeToggle />
           </div>
         </div>
@@ -685,42 +748,108 @@ export default function Dashboard() {
 
           <TabsContent value="explanation" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Why This Plan Works</CardTitle>
-                <CardDescription>
-                  AI-powered assistant to explain your optimization strategy
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
+                <div>
+                  <CardTitle>AI Plan Assistant</CardTitle>
+                  <CardDescription>
+                    Ask questions about your optimization strategy
+                  </CardDescription>
+                </div>
+                {chatMessages.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setChatMessages([])}
+                    data-testid="button-clear-chat"
+                  >
+                    Clear Chat
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="min-h-[200px] max-h-[400px] overflow-y-auto p-4 border rounded-md bg-muted/50" data-testid="div-explanation-display">
-                  {aiResponse ? (
-                    <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="div-ai-response">
-                      <div className="whitespace-pre-wrap">{aiResponse}</div>
-                    </div>
-                  ) : plan.explanation ? (
-                    <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="div-initial-explanation">
-                      <div className="whitespace-pre-wrap">{plan.explanation}</div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4 text-sm" data-testid="div-default-explanation">
-                      <p>
-                        Your payment plan has been optimized using advanced constraint programming to find the best allocation of your {formatCurrency(summary.nextPayment, user?.currency)} monthly budget across your {accounts.length} accounts.
-                      </p>
-                      <p>
-                        By following this plan, you'll pay off all your debts in {summary.payoffMonths} months while paying only {formatCurrency(summary.totalInterest, user?.currency)} in total interest charges.
-                      </p>
-                      <p>
-                        The optimizer takes into account each account's APR, minimum payment requirements, promotional periods, and payment due dates to create a mathematically optimal repayment schedule.
-                      </p>
-                    </div>
-                  )}
-                </div>
+                <ScrollArea className="h-[400px] border rounded-md bg-muted/30" data-testid="div-chat-container">
+                  <div className="p-4 space-y-4">
+                    {chatMessages.length === 0 ? (
+                      <div className="space-y-4 text-sm" data-testid="div-default-explanation">
+                        <div className="flex items-start gap-3 p-3 rounded-lg bg-primary/10">
+                          <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                            <Bot className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="space-y-3">
+                            <p className="font-medium">Welcome! I can help explain your debt payoff plan.</p>
+                            {plan.explanation ? (
+                              <div className="whitespace-pre-wrap text-muted-foreground">{plan.explanation}</div>
+                            ) : (
+                              <>
+                                <p className="text-muted-foreground">
+                                  Your payment plan has been optimized using advanced constraint programming to find the best allocation of your {formatCurrency(summary.nextPayment, user?.currency)} monthly budget across your {accounts.length} accounts.
+                                </p>
+                                <p className="text-muted-foreground">
+                                  By following this plan, you'll pay off all your debts in {summary.payoffMonths} months while paying only {formatCurrency(summary.totalInterest, user?.currency)} in total interest charges.
+                                </p>
+                              </>
+                            )}
+                            <p className="text-muted-foreground italic">
+                              Ask me anything! For example: "Why am I paying more to this account?" or "What happens if I pay an extra $100?"
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      chatMessages.map((message, index) => (
+                        <div
+                          key={index}
+                          className={`flex items-start gap-3 p-3 rounded-lg ${
+                            message.role === 'user' 
+                              ? 'bg-muted ml-8' 
+                              : 'bg-primary/10'
+                          }`}
+                          data-testid={`chat-message-${index}`}
+                        >
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            message.role === 'user' 
+                              ? 'bg-muted-foreground/20' 
+                              : 'bg-primary/20'
+                          }`}>
+                            {message.role === 'user' ? (
+                              <User className="h-4 w-4" />
+                            ) : (
+                              <Bot className="h-4 w-4 text-primary" />
+                            )}
+                          </div>
+                          <div className="whitespace-pre-wrap text-sm flex-1">
+                            {message.content}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    {aiExplainMutation.isPending && (
+                      <div className="flex items-start gap-3 p-3 rounded-lg bg-primary/10">
+                        <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                          <Bot className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm text-muted-foreground">Thinking...</span>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+                </ScrollArea>
                 <div className="flex gap-2">
                   <Textarea
-                    placeholder="Ask a follow-up question, e.g., 'Why am I paying the blue card first?'"
+                    placeholder="Ask a question about your plan..."
                     value={aiQuestion}
                     onChange={(e) => setAiQuestion(e.target.value)}
-                    className="flex-grow"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey && aiQuestion.trim() && !aiExplainMutation.isPending) {
+                        e.preventDefault();
+                        aiExplainMutation.mutate(aiQuestion);
+                        setAiQuestion("");
+                      }
+                    }}
+                    className="flex-grow resize-none"
                     rows={2}
                     data-testid="textarea-ai-question"
                   />
