@@ -87,6 +87,10 @@
   --chart-4: 32 95% 44%;
   --chart-5: 340 82% 52%;
 
+  --intelligence: 38 92% 50%;
+  --intelligence-foreground: 0 0% 0%;
+  --intelligence-dim: 38 92% 50% / 0.1;
+
   --font-sans: Inter, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: JetBrains Mono, monospace;
@@ -154,33 +158,33 @@
   --glass-bg-light: rgba(30, 30, 50, 0.6);
   --glass-bg-light-strong: rgba(30, 30, 50, 0.75);
 
-  --background: 222 47% 11%;
+  --background: 222 47% 4%;
 
   --foreground: 210 40% 98%;
 
   --border: 217 33% 17%;
 
-  --card: 220 39% 13%;
+  --card: 222 47% 11%;
 
   --card-foreground: 210 40% 98%;
 
-  --card-border: 217 33% 18%;
+  --card-border: 217 33% 17%;
 
-  --sidebar: 218 35% 15%;
+  --sidebar: 222 47% 8%;
 
   --sidebar-foreground: 210 40% 98%;
 
-  --sidebar-border: 217 33% 20%;
+  --sidebar-border: 217 33% 17%;
 
-  --sidebar-primary: 217 91% 60%;
+  --sidebar-primary: 188 94% 43%;
 
-  --sidebar-primary-foreground: 210 40% 98%;
+  --sidebar-primary-foreground: 0 0% 100%;
 
   --sidebar-accent: 217 33% 18%;
 
   --sidebar-accent-foreground: 210 40% 98%;
 
-  --sidebar-ring: 217 91% 60%;
+  --sidebar-ring: 188 94% 43%;
 
   --popover: 220 39% 16%;
 
@@ -188,9 +192,9 @@
 
   --popover-border: 217 33% 21%;
 
-  --primary: 217 91% 60%;
+  --primary: 188 94% 43%;
 
-  --primary-foreground: 210 40% 98%;
+  --primary-foreground: 0 0% 100%;
 
   --secondary: 217 33% 20%;
 
@@ -204,17 +208,21 @@
 
   --accent-foreground: 210 40% 98%;
 
-  --destructive: 0 84% 60%;
+  --destructive: 350 89% 60%;
 
   --destructive-foreground: 210 40% 98%;
 
   --input: 217 33% 28%;
-  --ring: 217 91% 60%;
-  --chart-1: 217 91% 70%;
-  --chart-2: 142 76% 56%;
+  --ring: 188 94% 43%;
+  --chart-1: 188 94% 43%;
+  --chart-2: 160 84% 39%;
   --chart-3: 262 83% 68%;
   --chart-4: 32 95% 64%;
   --chart-5: 340 82% 62%;
+
+  --intelligence: 38 92% 50%;
+  --intelligence-foreground: 0 0% 0%;
+  --intelligence-dim: 38 92% 50% / 0.1;
 
   --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.10);
   --shadow-xs: 0px 1px 3px 0px hsl(0 0% 0% / 0.14);

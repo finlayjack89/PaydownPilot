@@ -16,9 +16,9 @@ import {
 
 const navItems = [
   { href: "/", icon: Home, label: "Dashboard", testId: "link-dashboard" },
-  { href: "/accounts", icon: CreditCard, label: "Accounts", testId: "link-accounts" },
-  { href: "/plan", icon: BarChart3, label: "Plan Details", testId: "link-plan-details" },
-  { href: "/calendar", icon: Calendar, label: "Payment Calendar", testId: "link-calendar" },
+  { href: "/accounts", icon: CreditCard, label: "Ledger", testId: "link-accounts" },
+  { href: "/plan", icon: BarChart3, label: "Resolution Path", testId: "link-plan-details" },
+  { href: "/calendar", icon: Calendar, label: "Payment Schedule", testId: "link-calendar" },
 ];
 
 export function AppSidebar() {
@@ -30,9 +30,12 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-2 px-4 py-3">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">PP</span>
+            <span className="text-primary-foreground font-bold text-sm">R</span>
           </div>
-          <span className="font-semibold">Paydown Pilot</span>
+          <div className="flex flex-col">
+            <span className="font-semibold">Resolve</span>
+            <span className="text-xs text-muted-foreground">The Science of Debt Freedom</span>
+          </div>
         </div>
       </SidebarHeader>
       
