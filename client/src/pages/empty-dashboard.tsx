@@ -10,9 +10,12 @@ export default function EmptyDashboard() {
       <div className="space-y-8">
         <div className="text-center space-y-4">
           <h1 className="text-4xl font-bold" data-testid="text-welcome-title">
-            Welcome to Paydown Pilot
+            Welcome to Resolve
           </h1>
-          <p className="text-lg text-muted-foreground">
+          <p className="text-lg text-muted-foreground italic" data-testid="text-tagline">
+            Re-solve the past. Resolve the future.
+          </p>
+          <p className="text-base text-muted-foreground">
             Let's get you started on your journey to becoming debt-free
           </p>
         </div>

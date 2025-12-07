@@ -29,7 +29,7 @@ export function registerPlaidRoutes(app: Express) {
         user: {
           client_user_id: userId,
         },
-        client_name: 'Paydown Pilot',
+        client_name: 'Resolve',
         products: PLAID_PRODUCTS,
         country_codes: PLAID_COUNTRY_CODES,
         language: 'en',

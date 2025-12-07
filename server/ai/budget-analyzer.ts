@@ -71,7 +71,7 @@ export async function analyzeTransactionsWithClaude(
     merchant: t.merchant_name || '',
   }));
 
-  const prompt = `You are an expert financial analyst for an app called Paydown Pilot. Your sole job is to analyze a JSON list of bank transactions and categorize them into income, essential costs, and non-essential spending.
+  const prompt = `You are an expert financial analyst for an app called Resolve. Your sole job is to analyze a JSON list of bank transactions and categorize them into income, essential costs, and non-essential spending.
 
 You must adhere to these HARD constraints:
 1. Your ONLY output must be a single, valid, minified JSON object. Do not include any text, apologies, or explanations before or after the JSON.

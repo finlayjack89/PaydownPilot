@@ -33,7 +33,7 @@ except ImportError as e:
 
 # Create the FastAPI app instance
 app = FastAPI(
-    title="Paydown Pilot API",
+    title="Resolve API",
     description="API for generating optimized debt repayment plans.",
     version="0.1.0",
 )
@@ -45,7 +45,7 @@ async def health_check():
     Simple health check endpoint to verify the service is running.
     Returns 200 OK when the server is ready to accept requests.
     """
-    return {"status": "healthy", "service": "paydown-pilot-optimization-engine"}
+    return {"status": "healthy", "service": "resolve-optimization-engine"}
 
 # --- Helper Function for Data Conversion ---
 def convert_schema_to_solver_portfolio(

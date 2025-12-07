@@ -30,9 +30,9 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-2 px-4 py-3">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">PP</span>
+            <span className="text-primary-foreground font-bold text-sm">R</span>
           </div>
-          <span className="font-semibold">Paydown Pilot</span>
+          <span className="font-semibold">Resolve</span>
         </div>
       </SidebarHeader>
       

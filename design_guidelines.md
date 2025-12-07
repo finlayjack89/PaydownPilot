@@ -1,4 +1,4 @@
-# Paydown Pilot Design Guidelines
+# Resolve Design Guidelines
 
 ## Design Approach
 

@@ -1,7 +1,7 @@
-# Paydown Pilot
+# Resolve
 
 ## Overview
-Paydown Pilot is a web-based debt optimization application designed to help users manage and pay off multiple credit accounts efficiently. It utilizes a deterministic Math Brain (Google OR-Tools CP-SAT solver) for mathematically optimal repayment strategies and a Language Brain (Anthropic Claude) for user interaction and data research. The application aims to minimize interest, fit user budgets, and honor promotional periods, providing clear and trustworthy financial guidance.
+Resolve is a web-based debt optimization application designed to help users manage and pay off multiple credit accounts efficiently. The app's tagline is "Re-solve the past. Resolve the future." It utilizes a deterministic Math Brain (Google OR-Tools CP-SAT solver) for mathematically optimal repayment strategies and a Language Brain (Anthropic Claude) for user interaction and data research. The application aims to minimize interest, fit user budgets, and honor promotional periods, providing clear and trustworthy financial guidance.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.

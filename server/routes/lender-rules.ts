@@ -9,7 +9,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const AI_SYSTEM_PROMPT = `You are the "Research Team," an AI assistant for a fintech app called Paydown Pilot. Your *only* job is to research and extract structured data on credit card minimum payment rules.
+const AI_SYSTEM_PROMPT = `You are the "Research Team," an AI assistant for a fintech app called Resolve. Your *only* job is to research and extract structured data on credit card minimum payment rules.
 
 CRITICAL RULES:
 1. You are a researcher. You are *forbidden* from giving financial advice, performing calculations, or generating any monetary values that are not part of a quoted rule.

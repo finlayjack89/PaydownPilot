@@ -109,9 +109,10 @@ export default function Onboarding() {
         {currentStep === 1 && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-2xl font-semibold">Welcome to Paydown Pilot!</CardTitle>
-              <CardDescription>
-                Let's get you set up with a personalized debt repayment plan. This will only take a few minutes.
+              <CardTitle className="text-2xl font-semibold">Welcome to Resolve!</CardTitle>
+              <CardDescription className="space-y-1">
+                <span className="block italic text-primary">Re-solve the past. Resolve the future.</span>
+                <span className="block">Let's get you set up with a personalized debt repayment plan. This will only take a few minutes.</span>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
