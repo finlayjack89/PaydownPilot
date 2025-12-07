@@ -314,7 +314,7 @@ export default function PaymentCalendar() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <CalendarIcon className="h-8 w-8" />
-            Payment Schedule
+            Payment Calendar
           </h1>
           <p className="text-muted-foreground">
             View all your scheduled payments, budget changes, and account payoffs

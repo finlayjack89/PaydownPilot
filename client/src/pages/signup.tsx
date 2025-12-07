@@ -65,7 +65,6 @@ export default function Signup() {
           </div>
           <div className="space-y-2 text-center">
             <CardTitle className="text-2xl font-bold">Create your account</CardTitle>
-            <p className="text-sm text-muted-foreground font-medium">The Science of Debt Freedom</p>
             <CardDescription>
               Get started with your personalized debt repayment plan
             </CardDescription>

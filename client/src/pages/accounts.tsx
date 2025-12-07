@@ -42,7 +42,7 @@ export default function Accounts() {
       <main className="container mx-auto max-w-7xl px-4 py-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-4xl font-bold">Ledger</h1>
+            <h1 className="text-4xl font-bold">Your Accounts</h1>
             <p className="text-muted-foreground mt-2">
               Manage your credit cards, loans, and BNPL accounts
             </p>

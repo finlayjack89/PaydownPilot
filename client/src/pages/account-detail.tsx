@@ -487,7 +487,7 @@ export default function AccountDetail() {
               </p>
               <Button asChild data-testid="button-generate-plan">
                 <Link href="/budget">
-                  Resolve
+                  Generate Plan
                 </Link>
               </Button>
             </CardContent>

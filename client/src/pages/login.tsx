@@ -62,7 +62,6 @@ export default function Login() {
           </div>
           <div className="space-y-2 text-center">
             <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
-            <p className="text-sm text-muted-foreground font-medium">The Science of Debt Freedom</p>
             <CardDescription>
               Sign in to your account to continue optimizing your debt repayment
             </CardDescription>

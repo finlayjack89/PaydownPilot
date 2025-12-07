@@ -1,7 +1,7 @@
-# Resolve
+# Paydown Pilot
 
 ## Overview
-Resolve is a web-based debt optimization application branded as "The Science of Debt Freedom". It helps users manage and pay off multiple credit accounts efficiently using a deterministic Math Brain (Google OR-Tools CP-SAT solver) for mathematically optimal repayment strategies and a Language Brain (Anthropic Claude "Researcher") for user interaction and data research. The application aims to minimize interest, fit user budgets, and honor promotional periods, providing clear and trustworthy financial guidance with a high-end engineering tool aesthetic.
+Paydown Pilot is a web-based debt optimization application designed to help users manage and pay off multiple credit accounts efficiently. It utilizes a deterministic Math Brain (Google OR-Tools CP-SAT solver) for mathematically optimal repayment strategies and a Language Brain (Anthropic Claude) for user interaction and data research. The application aims to minimize interest, fit user budgets, and honor promotional periods, providing clear and trustworthy financial guidance.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -10,8 +10,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend
 - **Technology Stack**: React with TypeScript (Vite), Wouter, TanStack Query, shadcn/ui (Radix UI), Tailwind CSS.
-- **Design Philosophy**: "The Blueprint" - High-end engineering tool aesthetic with dark mode default. Uses cyan (#06b6d4) as primary color for the Math Brain/Optimizer and amber (#f59e0b) for the Language Brain/Researcher. Typography uses Inter for UI and JetBrains Mono for financial values.
-- **Terminology**: Navigation uses "Ledger" (accounts), "Resolution Path" (plan details), "Payment Schedule" (calendar). The AI assistant is branded as "Researcher" with amber styling.
+- **Design Philosophy**: Hybrid design combining Material Design 3, Stripe, and Linear for trust, clarity, and efficient data entry. Typography uses Inter for UI and JetBrains Mono for financial values.
 - **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, dashboard with ECharts visualizations, Payment Calendar with interactive event highlighting.
 
 ### Recent Updates (December 2024)

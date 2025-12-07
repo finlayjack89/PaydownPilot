@@ -186,7 +186,7 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
             <div className="p-4 bg-muted rounded-lg border">
               <p className="text-sm font-medium mb-2">Your Privacy Matters</p>
               <p className="text-sm text-muted-foreground">
-                I authorize Resolve to securely connect to my bank via Plaid. I agree to a one-time analysis 
+                I authorize Paydown Pilot to securely connect to my bank via Plaid. I agree to a one-time analysis 
                 of my transaction history to identify income and expenses to suggest a budget. My raw transaction 
                 data will not be stored.
               </p>
