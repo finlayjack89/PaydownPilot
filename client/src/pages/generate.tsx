@@ -117,7 +117,7 @@ export default function Generate() {
     },
     onSuccess: async (data) => {
       setProgress(100);
-      setStatusMessage("Plan generated successfully!");
+      setStatusMessage("Resolution generated successfully!");
       
       // Ensure the plan is available before redirecting
       await queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
@@ -199,10 +199,10 @@ export default function Generate() {
             </div>
             <CardTitle className="text-3xl font-bold">
               {generateMutation.isError
-                ? "Generation Failed"
+                ? "Resolution Failed"
                 : generateMutation.isSuccess
-                ? "Plan Ready!"
-                : "Generating Your Plan"}
+                ? "Resolution Ready!"
+                : "Resolving Your Debt"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">

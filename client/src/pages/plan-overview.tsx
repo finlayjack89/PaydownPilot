@@ -322,7 +322,7 @@ export default function Dashboard() {
 
       <main className="container mx-auto max-w-7xl px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold">Your Debt Payoff Plan</h1>
+          <h1 className="text-4xl font-bold">Resolution Path</h1>
           <p className="text-muted-foreground mt-2">
             Optimized to {plan.status === "OPTIMAL" ? "minimize your total interest" : "work within your constraints"}
           </p>
@@ -750,9 +750,11 @@ export default function Dashboard() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <div>
-                  <CardTitle>AI Plan Assistant</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-amber-500">Researcher</span>
+                  </CardTitle>
                   <CardDescription>
-                    Ask questions about your optimization strategy
+                    Your AI assistant for understanding your resolution path
                   </CardDescription>
                 </div>
                 {chatMessages.length > 0 && (
@@ -771,9 +773,9 @@ export default function Dashboard() {
                   <div className="p-4 space-y-4">
                     {chatMessages.length === 0 ? (
                       <div className="space-y-4 text-sm" data-testid="div-default-explanation">
-                        <div className="flex items-start gap-3 p-3 rounded-lg bg-primary/10">
-                          <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                            <Bot className="h-4 w-4 text-primary" />
+                        <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10">
+                          <div className="h-8 w-8 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                            <Bot className="h-4 w-4 text-amber-500" />
                           </div>
                           <div className="space-y-3">
                             <p className="font-medium">Welcome! I can help explain your debt payoff plan.</p>
@@ -802,19 +804,19 @@ export default function Dashboard() {
                           className={`flex items-start gap-3 p-3 rounded-lg ${
                             message.role === 'user' 
                               ? 'bg-muted ml-8' 
-                              : 'bg-primary/10'
+                              : 'bg-amber-500/10'
                           }`}
                           data-testid={`chat-message-${index}`}
                         >
                           <div className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                             message.role === 'user' 
                               ? 'bg-muted-foreground/20' 
-                              : 'bg-primary/20'
+                              : 'bg-amber-500/20'
                           }`}>
                             {message.role === 'user' ? (
                               <User className="h-4 w-4" />
                             ) : (
-                              <Bot className="h-4 w-4 text-primary" />
+                              <Bot className="h-4 w-4 text-amber-500" />
                             )}
                           </div>
                           <div className="whitespace-pre-wrap text-sm flex-1">
@@ -824,13 +826,13 @@ export default function Dashboard() {
                       ))
                     )}
                     {aiExplainMutation.isPending && (
-                      <div className="flex items-start gap-3 p-3 rounded-lg bg-primary/10">
-                        <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                          <Bot className="h-4 w-4 text-primary" />
+                      <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10">
+                        <div className="h-8 w-8 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                          <Bot className="h-4 w-4 text-amber-500" />
                         </div>
                         <div className="flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="text-sm text-muted-foreground">Thinking...</span>
+                          <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                          <span className="text-sm text-muted-foreground">Researching...</span>
                         </div>
                       </div>
                     )}

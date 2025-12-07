@@ -114,7 +114,7 @@ export default function ActiveDashboard() {
             <Button asChild data-testid="button-view-full-plan">
               <Link href="/plan">
                 <BarChart3 className="h-4 w-4 mr-2" />
-                View Full Plan
+                View Resolution Path
               </Link>
             </Button>
           </div>
@@ -202,9 +202,9 @@ export default function ActiveDashboard() {
                 <Link href="/generate">
                   <BarChart3 className="h-6 w-6 mb-2" />
                   <div className="text-left">
-                    <div className="font-semibold">Regenerate Plan</div>
+                    <div className="font-semibold">Resolve Again</div>
                     <div className="text-xs text-muted-foreground font-normal">
-                      Create a new optimized plan
+                      Create a new optimized resolution
                     </div>
                   </div>
                 </Link>
