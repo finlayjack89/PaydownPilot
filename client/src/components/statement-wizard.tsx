@@ -360,7 +360,12 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
   };
 
   const canProceedFromStep1 = () => {
-    return lenderName && totalBalance && dueDay && standardApr && (fixedAmount || percentage);
+    const result = lenderName && totalBalance && dueDay && standardApr && (fixedAmount || percentage);
+    console.log('[StatementWizard] canProceedFromStep1:', { 
+      lenderName, totalBalance, dueDay, standardApr, fixedAmount, percentage, 
+      result: !!result 
+    });
+    return result;
   };
 
   const canProceedFromStep2 = () => {
