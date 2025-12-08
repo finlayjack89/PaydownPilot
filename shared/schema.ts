@@ -373,3 +373,77 @@ export const accountWithBucketsRequestSchema = z.object({
     path: ["minPaymentRuleFixedCents"],
   }
 );
+
+// ============================================
+// Find My Budget - TrueLayer Types & Schemas
+// ============================================
+
+// Transaction types from TrueLayer API
+export type TrueLayerTransactionType = 
+  | "CREDIT" 
+  | "DEBIT" 
+  | "STANDING_ORDER" 
+  | "DIRECT_DEBIT" 
+  | "FEE";
+
+// TrueLayer transaction classification categories
+export type TrueLayerClassification = string[];
+
+export interface TrueLayerTransaction {
+  description: string;
+  amount: number; // Positive for credits, negative for debits
+  transaction_classification: TrueLayerClassification;
+  transaction_type: TrueLayerTransactionType;
+  date?: string;
+}
+
+export interface TrueLayerDirectDebit {
+  name: string;
+  amount: number; // Monthly amount
+}
+
+export interface TrueLayerStandingOrder {
+  name: string;
+  amount: number;
+  frequency?: string;
+}
+
+export interface TrueLayerPersona {
+  id: string;
+  transactions: TrueLayerTransaction[];
+  direct_debits: TrueLayerDirectDebit[];
+  standing_orders?: TrueLayerStandingOrder[];
+}
+
+// Budget Analysis Response - Output from Budget Engine
+export interface BudgetAnalysisResponse {
+  averageMonthlyIncomeCents: number;
+  fixedCostsCents: number; // Rent, Bills, Direct Debits
+  variableEssentialsCents: number; // Groceries, Transport
+  discretionaryCents: number;
+  safeToSpendCents: number; // Income - Fixed - Variable
+  detectedDebtPayments: string[]; // Lender names found
+  breakdown: {
+    incomeTransactions: Array<{ description: string; amountCents: number }>;
+    fixedTransactions: Array<{ description: string; amountCents: number }>;
+    variableTransactions: Array<{ description: string; amountCents: number }>;
+    discretionaryTransactions: Array<{ description: string; amountCents: number }>;
+  };
+  analysisMonths: number;
+}
+
+// Zod schema for budget analysis request
+export const budgetAnalyzeRequestSchema = z.object({
+  personaId: z.string().optional(),
+  transactions: z.array(z.object({
+    description: z.string(),
+    amount: z.number(),
+    transaction_classification: z.array(z.string()),
+    transaction_type: z.enum(["CREDIT", "DEBIT", "STANDING_ORDER", "DIRECT_DEBIT", "FEE"]),
+    date: z.string().optional(),
+  })).optional(),
+  direct_debits: z.array(z.object({
+    name: z.string(),
+    amount: z.number(),
+  })).optional(),
+});

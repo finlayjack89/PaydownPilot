@@ -8,6 +8,9 @@ import {
   calculateBudgetFromAnalysis,
   type TransactionData
 } from "../ai/budget-analyzer";
+import { analyzeBudget, analyzePersona } from "../services/budget-engine";
+import { getPersonaById, PERSONAS } from "../mock-data/truelayer-personas";
+import { budgetAnalyzeRequestSchema } from "@shared/schema";
 import { z } from "zod";
 
 // Request validation schemas
@@ -218,6 +221,156 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
       console.error("Error fetching current budget:", error);
       res.status(500).send({ 
         message: "Failed to fetch budget. Please try again." 
+      });
+    }
+  });
+
+  // ============================================
+  // Find My Budget - Deterministic Analysis (TrueLayer)
+  // ============================================
+
+  /**
+   * POST /api/budget/analyze
+   * Deterministic budget analysis using TrueLayer transaction classifications.
+   * Accepts either a personaId (for testing) or raw transaction data.
+   */
+  app.post("/api/budget/analyze", requireAuth, async (req, res) => {
+    try {
+      const validatedData = budgetAnalyzeRequestSchema.parse(req.body);
+      
+      // Option 1: Use a test persona
+      if (validatedData.personaId) {
+        const persona = getPersonaById(validatedData.personaId);
+        if (!persona) {
+          return res.status(404).send({ 
+            message: `Persona not found: ${validatedData.personaId}` 
+          });
+        }
+        
+        const analysis = analyzePersona(persona);
+        console.log(`[Budget Engine] Analyzed persona ${validatedData.personaId}:`, {
+          income: analysis.averageMonthlyIncomeCents / 100,
+          fixed: analysis.fixedCostsCents / 100,
+          variable: analysis.variableEssentialsCents / 100,
+          safeToSpend: analysis.safeToSpendCents / 100,
+          debtsDetected: analysis.detectedDebtPayments,
+        });
+        
+        return res.json({
+          success: true,
+          analysis,
+          personaId: validatedData.personaId,
+        });
+      }
+      
+      // Option 2: Use raw transaction data
+      if (validatedData.transactions && validatedData.transactions.length > 0) {
+        const analysis = analyzeBudget({
+          transactions: validatedData.transactions.map(t => ({
+            description: t.description,
+            amount: t.amount,
+            transaction_classification: t.transaction_classification,
+            transaction_type: t.transaction_type,
+            date: t.date,
+          })),
+          direct_debits: validatedData.direct_debits,
+          analysisMonths: 1,
+        });
+        
+        return res.json({
+          success: true,
+          analysis,
+        });
+      }
+      
+      return res.status(400).send({ 
+        message: "Either personaId or transactions array is required" 
+      });
+      
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).send({ 
+          message: "Invalid request data",
+          errors: error.errors 
+        });
+      }
+      
+      console.error("Error in deterministic budget analysis:", error);
+      res.status(500).send({ 
+        message: "Failed to analyze budget. Please try again." 
+      });
+    }
+  });
+
+  /**
+   * GET /api/budget/personas
+   * Lists available test personas for the Budget Finder demo
+   */
+  app.get("/api/budget/personas", requireAuth, async (_req, res) => {
+    try {
+      const personaList = Object.entries(PERSONAS).map(([id, persona]) => ({
+        id,
+        transactionCount: persona.transactions.length,
+        directDebitCount: persona.direct_debits.length,
+      }));
+      
+      res.json({
+        success: true,
+        personas: personaList,
+      });
+    } catch (error: any) {
+      console.error("Error fetching personas:", error);
+      res.status(500).send({ 
+        message: "Failed to fetch personas." 
+      });
+    }
+  });
+
+  /**
+   * POST /api/budget/apply-safe-to-spend
+   * Applies the calculated Safe-to-Spend amount to the user's budget
+   */
+  app.post("/api/budget/apply-safe-to-spend", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const { safeToSpendCents } = req.body;
+      
+      if (typeof safeToSpendCents !== "number" || safeToSpendCents < 0) {
+        return res.status(400).send({ 
+          message: "Invalid safeToSpendCents value" 
+        });
+      }
+      
+      // Check if user is a guest
+      if (userId === "guest-user") {
+        return res.status(403).send({ 
+          message: "Budget saving is not available for guest users. Please create an account." 
+        });
+      }
+      
+      // Update user's current budget with the safe-to-spend amount
+      const updatedUser = await storage.updateUser(userId, {
+        currentBudgetCents: safeToSpendCents,
+      });
+      
+      if (!updatedUser) {
+        return res.status(404).send({ 
+          message: "User not found" 
+        });
+      }
+      
+      console.log(`[Budget Engine] Applied Safe-to-Spend for user ${userId}: $${safeToSpendCents / 100}`);
+      
+      res.json({
+        success: true,
+        message: "Safe-to-Spend amount applied to budget",
+        currentBudgetCents: safeToSpendCents,
+      });
+      
+    } catch (error: any) {
+      console.error("Error applying safe-to-spend:", error);
+      res.status(500).send({ 
+        message: "Failed to apply budget. Please try again." 
       });
     }
   });
