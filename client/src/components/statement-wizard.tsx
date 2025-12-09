@@ -683,6 +683,17 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
                         </Badge>
                       )}
                     </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Custom Label</Label>
+                      <Input
+                        placeholder="e.g., 0% until Dec 2025"
+                        value={bucket.label}
+                        onChange={(e) => updateBucket(bucket.id, { label: e.target.value })}
+                        className="h-10"
+                        data-testid={`input-bucket-label-${index}`}
+                      />
+                    </div>
                     
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="space-y-1">

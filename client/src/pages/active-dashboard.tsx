@@ -8,8 +8,10 @@ import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { FindMyBudgetButton } from "@/components/find-my-budget-button";
 import { queryClient } from "@/lib/queryClient";
 import { useState } from "react";
+import { useAuth } from "@/lib/auth-context";
 
 export default function ActiveDashboard() {
+  const { user } = useAuth();
   const { data: accounts = [], refetch: refetchAccounts } = useAccounts();
   const { data: plan, refetch: refetchPlan } = useActivePlan();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -47,14 +49,14 @@ export default function ActiveDashboard() {
   const statCards = [
     {
       title: "Current Total Debt",
-      value: formatCurrency(stats.totalCurrentDebt),
+      value: formatCurrency(stats.totalCurrentDebt, user?.currency),
       description: currentMonthIndex === -1 ? "Starting balance" : "As of this month",
       icon: DollarSign,
       iconColor: "text-blue-500",
     },
     {
       title: "Total Paid So Far",
-      value: formatCurrency(stats.totalPaidSoFar),
+      value: formatCurrency(stats.totalPaidSoFar, user?.currency),
       description: currentMonthIndex === -1 ? "Plan not started yet" : `${currentMonthIndex + 1} payment${currentMonthIndex !== 0 ? 's' : ''} made`,
       icon: CheckCircle2,
       iconColor: "text-green-500",
@@ -75,7 +77,7 @@ export default function ActiveDashboard() {
     },
     {
       title: "Next Payment",
-      value: formatCurrency(stats.nextPayment.amount),
+      value: formatCurrency(stats.nextPayment.amount, user?.currency),
       description: `Due ${stats.nextPayment.date.toLocaleDateString("en-US", { month: "short", year: "numeric" })} • ${stats.nextPayment.account}`,
       icon: Calendar,
       iconColor: "text-pink-500",
@@ -244,7 +246,7 @@ export default function ActiveDashboard() {
                   </div>
                   <div className="text-right">
                     <div className="font-mono font-semibold" data-testid={`text-account-balance-${account.id}`}>
-                      {formatCurrency(account.currentBalanceCents)}
+                      {formatCurrency(account.currentBalanceCents, user?.currency)}
                     </div>
                     <div className="text-sm text-muted-foreground">
                       {(account.aprStandardBps / 100).toFixed(2)}% APR

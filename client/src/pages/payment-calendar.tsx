@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, CreditCard, TrendingUp, Wallet, PartyPopper } from "lucide-react";
 import { PlanResponse, Account, Budget } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
 
 type EventType = "payment" | "budgetChange" | "lumpSum" | "payoff";
 
@@ -23,15 +24,6 @@ interface CalendarEvent {
     payoffAccount?: string;
   };
 }
-
-const formatCurrency = (cents: number, currency = "USD") => {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-};
 
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [

@@ -21,8 +21,16 @@ export function DebtTimeline({ data, currency }: DebtTimelineProps) {
     }
 
     // Group data by lender
-    const lenders = [...new Set(data.map(r => r.lenderName))];
-    const months = [...new Set(data.map(r => r.month))].sort((a, b) => a - b);
+    const lenders = Array.from(new Set(data.map(r => r.lenderName)));
+    const months = Array.from(new Set(data.map(r => r.month))).sort((a, b) => a - b);
+    
+    // Create a lookup map for payment amounts by lender and month (accumulate if multiple entries)
+    const paymentMap = new Map<string, number>();
+    data.forEach(r => {
+      const key = `${r.lenderName}-${r.month}`;
+      const existing = paymentMap.get(key) || 0;
+      paymentMap.set(key, existing + r.paymentCents);
+    });
 
     // Prepare series data
     const series = lenders.map(lender => {
@@ -54,24 +62,35 @@ export function DebtTimeline({ data, currency }: DebtTimelineProps) {
           },
         },
         formatter: function (params: any) {
-          let total = 0;
-          let html = `<div style="font-weight: bold; margin-bottom: 8px;">Month ${params[0].axisValue}</div>`;
+          let totalBalance = 0;
+          let totalPayment = 0;
+          const month = params[0].axisValue;
+          let html = `<div style="font-weight: bold; margin-bottom: 8px;">Month ${month}</div>`;
           
           params.forEach((param: any) => {
-            const value = param.value;
-            total += value;
-            if (value > 0) {
+            const balance = param.value;
+            const lenderName = param.seriesName;
+            const paymentCents = paymentMap.get(`${lenderName}-${month}`) || 0;
+            totalBalance += balance;
+            totalPayment += paymentCents;
+            if (balance > 0 || paymentCents > 0) {
               html += `
                 <div style="display: flex; align-items: center; margin: 4px 0;">
                   <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${param.color}; margin-right: 8px;"></span>
-                  <span style="flex: 1;">${param.seriesName}</span>
-                  <span style="font-weight: bold; margin-left: 16px;">${formatCurrency(Math.round(value * 100), currency)}</span>
+                  <span style="flex: 1;">${lenderName}</span>
+                  <span style="margin-left: 16px;">${formatCurrency(Math.round(balance * 100), currency)}</span>
+                </div>
+                <div style="margin-left: 18px; font-size: 0.85em; color: #888;">
+                  Payment: ${formatCurrency(paymentCents, currency)}
                 </div>
               `;
             }
           });
           
-          html += `<div style="border-top: 1px solid #ccc; margin-top: 8px; padding-top: 8px; font-weight: bold;">Total: ${formatCurrency(Math.round(total * 100), currency)}</div>`;
+          html += `<div style="border-top: 1px solid #ccc; margin-top: 8px; padding-top: 8px;">`;
+          html += `<div style="font-weight: bold;">Total Balance: ${formatCurrency(Math.round(totalBalance * 100), currency)}</div>`;
+          html += `<div style="font-weight: bold;">Total Payment: ${formatCurrency(totalPayment, currency)}</div>`;
+          html += `</div>`;
           return html;
         },
       },
