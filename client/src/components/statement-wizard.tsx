@@ -329,13 +329,15 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
   };
 
   const addBucket = (type: string) => {
+    // Balance transfers and money transfers default to 0% promo rate
+    const isPromoType = type === BucketType.BALANCE_TRANSFER || type === BucketType.MONEY_TRANSFER;
     const newBucket: BucketFormData = {
       id: generateBucketId(),
       bucketType: type,
       label: "",
       balanceCents: 0,
-      aprBps: type === BucketType.BALANCE_TRANSFER ? 0 : formatBpsInput(standardApr),
-      isPromo: type === BucketType.BALANCE_TRANSFER,
+      aprBps: isPromoType ? 0 : formatBpsInput(standardApr),
+      isPromo: isPromoType,
       promoExpiryDate: "",
     };
     setBuckets([...buckets, newBucket]);
@@ -551,16 +553,16 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
           className={cn(
             "p-6 cursor-pointer border-2 transition-all",
             splitMode === "single" 
-              ? "border-primary bg-primary/5" 
-              : "hover-elevate"
+              ? "border-primary bg-primary/5 ring-2 ring-primary ring-offset-2 shadow-lg scale-[1.02]" 
+              : "hover-elevate hover:shadow-md hover:border-muted-foreground/50"
           )}
           onClick={() => setSplitMode("single")}
           data-testid="card-single-rate"
         >
           <div className="flex flex-col items-center gap-4 text-center">
             <div className={cn(
-              "p-4 rounded-full",
-              splitMode === "single" ? "bg-primary/20" : "bg-muted"
+              "p-4 rounded-full transition-colors",
+              splitMode === "single" ? "bg-primary text-primary-foreground" : "bg-muted"
             )}>
               <CircleDot className="h-8 w-8" />
             </div>
@@ -570,7 +572,10 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
                 All my balance is at the same APR
               </p>
             </div>
-            <div className="text-sm font-medium text-primary">
+            <div className={cn(
+              "text-sm font-medium",
+              splitMode === "single" ? "text-primary" : "text-muted-foreground"
+            )}>
               {getCurrencySymbol()}{totalBalance || "0"} at {standardApr || "0"}%
             </div>
           </div>
@@ -580,16 +585,16 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
           className={cn(
             "p-6 cursor-pointer border-2 transition-all",
             splitMode === "multiple" 
-              ? "border-primary bg-primary/5" 
-              : "hover-elevate"
+              ? "border-primary bg-primary/5 ring-2 ring-primary ring-offset-2 shadow-lg scale-[1.02]" 
+              : "hover-elevate hover:shadow-md hover:border-muted-foreground/50"
           )}
           onClick={() => setSplitMode("multiple")}
           data-testid="card-multiple-buckets"
         >
           <div className="flex flex-col items-center gap-4 text-center">
             <div className={cn(
-              "p-4 rounded-full",
-              splitMode === "multiple" ? "bg-primary/20" : "bg-muted"
+              "p-4 rounded-full transition-colors",
+              splitMode === "multiple" ? "bg-primary text-primary-foreground" : "bg-muted"
             )}>
               <Layers className="h-8 w-8" />
             </div>
@@ -615,8 +620,10 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
         <h4 className="text-sm font-medium mb-2">Why does this matter?</h4>
         <p className="text-sm text-muted-foreground">
           UK credit cards often have different APRs for different types of spending. 
-          Balance transfers may be at 0%, while purchases are at 24.9%, and cash advances at 39.9%. 
-          Tracking these separately helps you prioritize which balances to pay off first.
+          Balance transfers and money transfers often come with promotional 0% rates for a limited period (e.g., 18-24 months), 
+          while purchases are at your standard rate (e.g., 24.9%), and cash advances can be even higher. 
+          Tracking these separately with their promo expiry dates helps you prioritize which balances to pay off first 
+          and avoid surprise rate increases when promotional periods end.
         </p>
       </div>
     </div>

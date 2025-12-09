@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { ProgressStepper } from "@/components/progress-stepper";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { ArrowRight, ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { countries } from "@/lib/countries";
 import { cn } from "@/lib/utils";
@@ -33,8 +33,37 @@ export default function Onboarding() {
   const [currency, setCurrency] = useState(() => user?.currency || "");
   const [countryOpen, setCountryOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
 
   const selectedCountry = countries.find(c => c.code === country);
+
+  // Auto-detect location using IP geolocation when entering step 2
+  useEffect(() => {
+    if (currentStep === 2 && !country && !isDetectingLocation) {
+      setIsDetectingLocation(true);
+      fetch("https://ipapi.co/json/")
+        .then(res => res.json())
+        .then(data => {
+          if (data.country_code) {
+            const detectedCountry = countries.find(c => c.code === data.country_code);
+            if (detectedCountry) {
+              setCountry(detectedCountry.code);
+              setCurrency(detectedCountry.currency);
+              // Try to match region
+              if (data.region && detectedCountry.regions.includes(data.region)) {
+                setRegion(data.region);
+              }
+            }
+          }
+        })
+        .catch(err => {
+          console.log("[Onboarding] IP geolocation failed:", err);
+        })
+        .finally(() => {
+          setIsDetectingLocation(false);
+        });
+    }
+  }, [currentStep, country, isDetectingLocation]);
 
   const handleNext = async () => {
     console.log("[Onboarding] handleNext called, currentStep:", currentStep);
@@ -95,15 +124,15 @@ export default function Onboarding() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
+    <div className="flex flex-col min-h-screen bg-background">
+      <header className="border-b shrink-0">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
           <Logo />
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="container mx-auto max-w-3xl px-4 py-12">
+      <main className="flex-1 flex flex-col container mx-auto max-w-3xl px-4 py-12">
         <ProgressStepper steps={steps} currentStep={currentStep} />
 
         {currentStep === 1 && (
@@ -142,6 +171,12 @@ export default function Onboarding() {
               <CardDescription>
                 This helps us apply the correct minimum payment rules and display amounts in your currency.
               </CardDescription>
+              {isDetectingLocation && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Detecting your location...
+                </div>
+              )}
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-6 md:grid-cols-2">
@@ -293,7 +328,7 @@ export default function Onboarding() {
           </Card>
         )}
 
-        <div className="mt-8 flex justify-between gap-4">
+        <div className="mt-auto pt-8 flex justify-between gap-4">
           <Button
             variant="outline"
             onClick={handleBack}

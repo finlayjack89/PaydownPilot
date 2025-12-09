@@ -77,11 +77,16 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
         setPromoDuration(account.promoDurationMonths.toString());
       }
     } else {
-      // Adding mode: show selection screen
+      // Adding mode: check if UK user to skip Plaid selection
       resetForm();
-      setEntryMethod("selection");
+      // Skip Plaid selection for UK users - go straight to account type selection
+      if (user?.country === "GB") {
+        setEntryMethod("type-selection");
+      } else {
+        setEntryMethod("selection");
+      }
     }
-  }, [account, open]);
+  }, [account, open, user?.country]);
 
   const resetForm = () => {
     setLenderName("");
