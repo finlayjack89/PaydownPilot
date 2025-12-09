@@ -14,6 +14,8 @@ Preferred communication style: Simple, everyday language.
 - **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, dashboard with ECharts visualizations, Payment Calendar with interactive event highlighting.
 
 ### Recent Updates (December 2024)
+- **Comprehensive E2E Testing**: Full end-to-end testing completed with 15 diverse test personas covering the complete user journey.
+- **AI Model Fix**: Updated Anthropic model names to Replit AI Integrations compatible format (`claude-sonnet-4-5`, `claude-haiku-4-5`).
 - **AI Chat Improvements**: ChatGPT-style conversation history with user/assistant message bubbles; uses Claude Haiku for fast responses.
 - **Delete Plan Button**: Users can delete generated plans with confirmation dialog.
 - **Refresh Dashboard Button**: Manual refresh to fetch latest account and plan data.
