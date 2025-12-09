@@ -95,7 +95,7 @@ export function registerLenderRuleRoutes(app: Express) {
       const userPrompt = `Find the standard minimum payment rule for ${lenderName} credit cards in ${country}. Return ONLY a valid JSON object with the fields: min_payment_percentage_bp, min_payment_fixed_cents, includes_interest, and rule_summary.`;
 
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 1024,
         system: AI_SYSTEM_PROMPT,
         messages: [

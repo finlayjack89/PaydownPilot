@@ -1,14 +1,15 @@
 /*
 <important_code_snippet_instructions>
 Using Replit AI Integrations for Anthropic access.
-For fast responses, use claude-haiku-4-5-20250514 model.
-For complex reasoning, use claude-sonnet-4-20250514 model.
+For fast responses, use claude-haiku-4-5 model.
+For complex reasoning, use claude-sonnet-4-5 model.
+Supported models: claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5, claude-opus-4-1
 </important_code_snippet_instructions>
 */
 
 // <important_do_not_delete>
-const DEFAULT_MODEL_STR = "claude-sonnet-4-20250514";
-const FAST_MODEL_STR = "claude-haiku-4-5-20250514";
+const DEFAULT_MODEL_STR = "claude-sonnet-4-5";
+const FAST_MODEL_STR = "claude-haiku-4-5";
 // </important_do_not_delete>
 
 import Anthropic from '@anthropic-ai/sdk';
