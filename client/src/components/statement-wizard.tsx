@@ -71,6 +71,10 @@ function CurrencyInput({ valueCents, onValueChange, currencySymbol, placeholder 
     const val = e.target.value;
     if (val === "" || /^[0-9]*\.?[0-9]*$/.test(val)) {
       setLocalValue(val);
+      // Update parent state for real-time allocation tracking
+      // Parse immediately - trailing decimals parse fine (e.g., "1500." becomes 150000 cents)
+      const cents = val.trim() === "" ? 0 : parseCurrencyToCents(val);
+      onValueChange(cents);
     }
   };
 
