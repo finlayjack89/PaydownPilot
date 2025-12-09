@@ -25,10 +25,17 @@ interface MinPaymentRule {
   includesInterest: boolean;
 }
 
+interface AprInfo {
+  purchaseAprBps: number;
+  balanceTransferAprBps?: number;
+  cashAdvanceAprBps?: number;
+}
+
 interface LenderRuleDiscoveryResult {
   lenderName: string;
   ruleDescription: string;
   minPaymentRule: MinPaymentRule;
+  aprInfo?: AprInfo;
   confidence: "high" | "medium" | "low";
 }
 
@@ -36,13 +43,18 @@ export async function discoverLenderRule(
   lenderName: string,
   country: string
 ): Promise<LenderRuleDiscoveryResult> {
-  const prompt = `You are a financial data researcher. Find the minimum payment calculation rule for "${lenderName}" in ${country}.
+  const prompt = `You are a financial data researcher. Find the minimum payment calculation rule AND typical APR rates for "${lenderName}" in ${country}.
 
 Minimum payment rules typically follow this format:
 - Fixed amount (e.g., $25, £5)
 - Percentage of balance (e.g., 2.5%, 3%)
 - Some rules include interest in the percentage calculation (common in UK)
 - Final minimum payment is usually: max(fixed amount, percentage of balance)
+
+Also research the typical APR (Annual Percentage Rate) for this lender's credit card for:
+- Regular purchases (required)
+- Balance transfers (if different, optional)
+- Cash advances (if different, optional)
 
 Research the specific rule for this lender and return ONLY a JSON object (no other text) in this exact format:
 {
@@ -53,14 +65,19 @@ Research the specific rule for this lender and return ONLY a JSON object (no oth
     "percentageBps": <percentage in basis points, e.g., 250 for 2.5%>,
     "includesInterest": <true if percentage includes interest, typically false>
   },
+  "aprInfo": {
+    "purchaseAprBps": <APR in basis points, e.g., 2490 for 24.9%>,
+    "balanceTransferAprBps": <optional APR in basis points>,
+    "cashAdvanceAprBps": <optional APR in basis points>
+  },
   "confidence": "<high|medium|low>"
 }
 
 If you cannot find the exact rule, use typical industry standards for that country:
-- US credit cards: max($25, 1% of balance)
-- UK credit cards: max(£5, 2.5% of balance + interest)
-- Canada: max(CA$10, 3% of balance)
-- Australia: max(AU$25, 2% of balance)
+- US credit cards: max($25, 1% of balance), typical APR 20-25%
+- UK credit cards: max(£5, 2.5% of balance + interest), typical APR 20-30%
+- Canada: max(CA$10, 3% of balance), typical APR 19-21%
+- Australia: max(AU$25, 2% of balance), typical APR 18-22%
 
 Return ONLY the JSON object.`;
 

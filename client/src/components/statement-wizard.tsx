@@ -180,6 +180,7 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
   
   // AI discovery state
   const [discoveredRule, setDiscoveredRule] = useState<LenderRuleDiscoveryResponse | null>(null);
+  const [showAiMinPaymentDialog, setShowAiMinPaymentDialog] = useState(false);
 
   // Step 2: Split decision
   const [splitMode, setSplitMode] = useState<"single" | "multiple" | null>(null);
@@ -235,15 +236,7 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
     onSuccess: (data: any) => {
       const ruleData = data as LenderRuleDiscoveryResponse;
       setDiscoveredRule(ruleData);
-      if (ruleData.minPaymentRule) {
-        setFixedAmount((ruleData.minPaymentRule.fixedCents / 100).toString());
-        setPercentage((ruleData.minPaymentRule.percentageBps / 100).toString());
-        setIncludesInterest(ruleData.minPaymentRule.includesInterest);
-      }
-      toast({
-        title: "Rule discovered",
-        description: `Found minimum payment rule for ${lenderName}`,
-      });
+      setShowAiMinPaymentDialog(true);
     },
     onError: () => {
       toast({
@@ -253,6 +246,22 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
       });
     },
   });
+
+  const applyDiscoveredRule = (applyApr: boolean = false) => {
+    if (discoveredRule?.minPaymentRule) {
+      setFixedAmount((discoveredRule.minPaymentRule.fixedCents / 100).toString());
+      setPercentage((discoveredRule.minPaymentRule.percentageBps / 100).toString());
+      setIncludesInterest(discoveredRule.minPaymentRule.includesInterest);
+    }
+    if (applyApr && discoveredRule?.aprInfo?.purchaseAprBps) {
+      setStandardApr((discoveredRule.aprInfo.purchaseAprBps / 100).toString());
+    }
+    toast({
+      title: "Rule applied",
+      description: `Payment rule${applyApr ? " and APR" : ""} for ${lenderName} has been applied.`,
+    });
+    setShowAiMinPaymentDialog(false);
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -534,6 +543,22 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
         <p className="text-xs text-muted-foreground">
           Minimum payment is typically the greater of these two amounts
         </p>
+        
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full mt-4"
+          onClick={() => discoverRuleMutation.mutate()}
+          disabled={!lenderName || discoverRuleMutation.isPending}
+          data-testid="button-ai-min-payment"
+        >
+          {discoverRuleMutation.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4 mr-2" />
+          )}
+          Calculate my minimum payment with AI
+        </Button>
       </div>
     </div>
   );
@@ -907,11 +932,128 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
               data-testid="button-save-account"
             >
               {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update Card" : "Add Card"}
+              {isEditing ? "Update Card" : "Confirm plan and add to dashboard"}
             </Button>
           )}
         </DialogFooter>
       </DialogContent>
+
+      {/* AI Minimum Payment Confirmation Dialog */}
+      <Dialog open={showAiMinPaymentDialog} onOpenChange={setShowAiMinPaymentDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              AI Discovered Rule
+            </DialogTitle>
+            <DialogDescription>
+              We found minimum payment information for {lenderName}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {discoveredRule && (
+            <div className="space-y-4">
+              <Card className="p-4 bg-primary/5 border-primary/20">
+                <p className="text-sm font-medium mb-3">{discoveredRule.ruleDescription}</p>
+                <div className="grid gap-2 text-sm">
+                  {discoveredRule.minPaymentRule.fixedCents > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Fixed minimum:</span>
+                      <span className="font-mono font-medium">
+                        {getCurrencySymbol()}{(discoveredRule.minPaymentRule.fixedCents / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {discoveredRule.minPaymentRule.percentageBps > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Percentage of balance:</span>
+                      <span className="font-mono font-medium">
+                        {(discoveredRule.minPaymentRule.percentageBps / 100).toFixed(2)}%
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Includes interest:</span>
+                    <span className="font-medium">
+                      {discoveredRule.minPaymentRule.includesInterest ? "Yes" : "No"}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+              
+              {discoveredRule.aprInfo && (
+                <Card className="p-4 bg-muted/50">
+                  <p className="text-sm font-medium mb-3">APR Information</p>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Standard Purchase APR:</span>
+                      <span className="font-mono font-medium">
+                        {(discoveredRule.aprInfo.purchaseAprBps / 100).toFixed(2)}%
+                      </span>
+                    </div>
+                    {discoveredRule.aprInfo.balanceTransferAprBps !== undefined && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Balance Transfer APR:</span>
+                        <span className="font-mono font-medium">
+                          {(discoveredRule.aprInfo.balanceTransferAprBps / 100).toFixed(2)}%
+                        </span>
+                      </div>
+                    )}
+                    {discoveredRule.aprInfo.cashAdvanceAprBps !== undefined && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Cash Advance APR:</span>
+                        <span className="font-mono font-medium">
+                          {(discoveredRule.aprInfo.cashAdvanceAprBps / 100).toFixed(2)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+              
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Confidence:</span>
+                <Badge 
+                  variant={discoveredRule.confidence === "high" ? "default" : "secondary"}
+                  className={cn(
+                    discoveredRule.confidence === "high" && "bg-green-600",
+                    discoveredRule.confidence === "medium" && "bg-yellow-600",
+                    discoveredRule.confidence === "low" && "bg-orange-600"
+                  )}
+                  data-testid="badge-confidence"
+                >
+                  {discoveredRule.confidence}
+                </Badge>
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowAiMinPaymentDialog(false)}
+              data-testid="button-cancel-ai-rule"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => applyDiscoveredRule(false)}
+              data-testid="button-apply-payment-only"
+            >
+              Apply Payment Rule Only
+            </Button>
+            {discoveredRule?.aprInfo && (
+              <Button
+                onClick={() => applyDiscoveredRule(true)}
+                data-testid="button-apply-all"
+              >
+                Apply All
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

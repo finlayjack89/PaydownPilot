@@ -245,10 +245,17 @@ export interface LenderRuleDiscoveryRequest {
   country: string;
 }
 
+export interface AprInfo {
+  purchaseAprBps: number;
+  balanceTransferAprBps?: number;
+  cashAdvanceAprBps?: number;
+}
+
 export interface LenderRuleDiscoveryResponse {
   lenderName: string;
   ruleDescription: string;
   minPaymentRule: MinPaymentRule;
+  aprInfo?: AprInfo;
   confidence: "high" | "medium" | "low";
 }
 
