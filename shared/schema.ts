@@ -423,7 +423,14 @@ export interface DetectedDebtPayment {
   type: string;
 }
 
-// Transaction breakdown item with category
+// Breakdown item for budget analysis (amount in dollars, not cents)
+export interface BreakdownItem {
+  description: string;
+  amount: number;
+  category?: string;
+}
+
+// Legacy type - kept for backwards compatibility
 export interface TransactionBreakdownItem {
   description: string;
   amountCents: number;
@@ -439,10 +446,10 @@ export interface BudgetAnalysisResponse {
   safeToSpendCents: number; // Income - Fixed - Variable
   detectedDebtPayments: DetectedDebtPayment[]; // Lender payments found with details
   breakdown: {
-    incomeTransactions: TransactionBreakdownItem[];
-    fixedTransactions: TransactionBreakdownItem[];
-    variableTransactions: TransactionBreakdownItem[];
-    discretionaryTransactions: TransactionBreakdownItem[];
+    income: BreakdownItem[];
+    fixedCosts: BreakdownItem[];
+    variableEssentials: BreakdownItem[];
+    discretionary: BreakdownItem[];
   };
   analysisMonths: number;
 }

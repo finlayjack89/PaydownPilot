@@ -14,6 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, dashboard with ECharts visualizations, Payment Calendar with interactive event highlighting.
 
 ### Recent Updates (December 2024)
+- **TrueLayer Integration**: Replaced Plaid with TrueLayer for UK Open Banking. New OAuth2 flow, encrypted token storage, transaction fetching via TrueLayer Data API. Budget analysis uses deterministic categorization from transaction data.
 - **Confirm and Save Plan**: Plans are now temporary until confirmed. The delete button has been replaced with a "Confirm and Save Plan" button. If users exit without confirming, their plan is automatically deleted. After confirmation, the button shows "Plan Saved!" and becomes disabled.
 - **Statement Guidance AI Assistant**: New AI-powered assistant helps users find their balance bucket breakdown on their bank statements. Accessible from Step 3 (Bucket Builder) of the Statement Wizard via "Help me find this on my statement" button. Uses Claude Sonnet 4.5 to provide bank-specific guidance based on UK credit card statement standards.
 - **Comprehensive E2E Testing**: Full end-to-end testing completed with 15 diverse test personas covering the complete user journey.
@@ -31,17 +32,26 @@ Preferred communication style: Simple, everyday language.
   - Upcoming events list for next 3 months
 
 ### Backend
-- **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication, Plaid SDK. Python backend (FastAPI) for the optimization engine.
-- **API Structure**: RESTful endpoints (`/api/auth`, `/api/accounts`, `/api/budget`, `/api/preferences`, `/api/plans`, `/api/plaid/*`, `/api/lender-rules/*`, `/api/statement-guidance/*`).
-- **Authentication & Security**: Scrypt password hashing, express-session management (30-minute timeout), AES-256-GCM encryption for Plaid tokens, secure credential storage.
-- **Plaid Integration**: Bank connection via Plaid Link, encrypted access token storage, liability account syncing.
+- **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication. Python backend (FastAPI) for the optimization engine.
+- **API Structure**: RESTful endpoints (`/api/auth`, `/api/accounts`, `/api/budget`, `/api/preferences`, `/api/plans`, `/api/truelayer/*`, `/api/lender-rules/*`, `/api/statement-guidance/*`).
+- **Authentication & Security**: Scrypt password hashing, express-session management (30-minute timeout), AES-256-GCM encryption for TrueLayer tokens, secure credential storage.
+- **TrueLayer Integration**: UK Open Banking connection via TrueLayer OAuth2 flow, encrypted access/refresh token storage, transaction and direct debit fetching for budget analysis.
 - **AI Research System**: Claude 4.5 Sonnet for automated lender rule discovery with human verification, intelligent caching of verified rules.
 
 ### Data Storage
 - **Database**: PostgreSQL (Neon serverless) with WebSocket support, Drizzle ORM.
-- **Schema Design**: `users`, `accounts`, `debt_buckets`, `budgets`, `preferences`, `plans`, `lenderRules`, `plaidItems`.
-- **Key Data Patterns**: Monetary values in cents (integers), percentages in basis points (bps), JSONB for nested data, cascade deletes, encrypted sensitive data (Plaid tokens).
-- **Security**: Plaid access tokens encrypted with AES-256-GCM using ENCRYPTION_SECRET environment variable.
+- **Schema Design**: `users`, `accounts`, `debt_buckets`, `budgets`, `preferences`, `plans`, `lenderRules`, `trueLayerItems`.
+- **Key Data Patterns**: Monetary values in cents (integers), percentages in basis points (bps), JSONB for nested data, cascade deletes, encrypted sensitive data (TrueLayer tokens).
+- **Security**: TrueLayer access/refresh tokens encrypted with AES-256-GCM using ENCRYPTION_SECRET environment variable.
+
+### TrueLayer Integration (UK Open Banking)
+- **Purpose**: Enables users to securely connect their UK bank accounts to fetch transaction history for budget analysis.
+- **OAuth2 Flow**: User initiates connection via `/api/truelayer/auth-url`, completes authentication on TrueLayer, callback at `/api/truelayer/callback` exchanges code for tokens.
+- **Token Management**: Access and refresh tokens encrypted with AES-256-GCM before storage. Automatic token refresh when consent expires.
+- **Data Fetching**: Fetches transactions (90 days) and direct debits via TrueLayer Data API for deterministic budget categorization.
+- **Budget Engine**: `server/services/budget-engine.ts` categorizes transactions into income, fixed costs, variable essentials, and discretionary spending using TrueLayer's `transaction_classification` field.
+- **Environment Variables**: `TRUELAYER_CLIENT_ID`, `TRUELAYER_CLIENT_SECRET` stored as secrets. `TRUELAYER_REDIRECT_URI` auto-configured from Replit domain.
+- **Sandbox Mode**: Uses TrueLayer sandbox environment with Mock Bank for testing. Production uses real UK banks.
 
 ### Debt Buckets (UK Credit Card Feature)
 - **Purpose**: UK credit cards often have multiple balance segments at different APRs (0% balance transfers, 24.9% purchases, 39.9% cash advances). The bucket system allows users to track these separately for accurate interest calculations and payment prioritization.
@@ -59,7 +69,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Key Architectural Decisions
 - **Two-Brain Separation**: Divides financial calculation (deterministic Python solver) from AI assistance (Anthropic Claude "Language Brain") to ensure accuracy and intelligent user support. The Math Brain receives only verified structured data; the Language Brain handles research and explanations only.
-- **Hybrid-Assisted Onboarding**: Combines Plaid automation (bank connections, balances, due dates) with AI research (minimum payment rules) and human verification to create a fast yet accurate onboarding flow.
+- **Hybrid-Assisted Onboarding**: Combines TrueLayer automation (bank connections, transaction history) with AI research (minimum payment rules) and human verification to create a fast yet accurate onboarding flow.
 - **Monetary Precision**: All currency stored as cents and percentages as basis points to prevent floating-point errors.
 - **Session-Based Authentication**: Uses Passport.js with express-session for secure, time-sensitive authentication.
 - **Serverless Database**: Neon serverless PostgreSQL for scalability and reliability.
@@ -73,7 +83,7 @@ Preferred communication style: Simple, everyday language.
 - Anthropic Claude Sonnet 4.5: Used for lender rule discovery (AI "Research Team") and plan explanations. Strictly forbidden from performing financial calculations per Two-Brain architecture.
 
 **Banking Integration:**
-- Plaid: Bank connection, account aggregation, liability data fetching. Supports US, GB, CA markets.
+- TrueLayer: UK Open Banking connection, transaction fetching, direct debit data for budget analysis. Supports UK banks via PSD2 Open Banking.
 
 **Optimization Engine:**
 - Google OR-Tools CP-SAT solver: Python implementation for deterministic mathematical debt optimization.

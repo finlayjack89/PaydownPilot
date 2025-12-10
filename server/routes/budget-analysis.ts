@@ -2,11 +2,6 @@ import type { Express } from "express";
 import { requireAuth } from "../auth";
 import { storage } from "../storage";
 import { decryptToken } from "../encryption";
-import { 
-  analyzeTransactionsWithClaude, 
-  calculateBudgetFromAnalysis,
-  type TransactionData
-} from "../ai/budget-analyzer";
 import { analyzeBudget, analyzePersona } from "../services/budget-engine";
 import { getPersonaById, PERSONAS } from "../mock-data/truelayer-personas";
 import { budgetAnalyzeRequestSchema } from "@shared/schema";

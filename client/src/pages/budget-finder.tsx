@@ -293,7 +293,7 @@ export default function BudgetFinder() {
                       <div>
                         <p className="font-medium text-sm">Existing Debt Payments Detected</p>
                         <p className="text-sm text-muted-foreground mt-1">
-                          We found payments to: {analysisResult.detectedDebtPayments.join(", ")}
+                          We found payments to: {analysisResult.detectedDebtPayments.map(d => d.description).join(", ")}
                         </p>
                         <p className="text-xs text-muted-foreground mt-2">
                           Consider adding these accounts to your debt payoff plan

@@ -4,7 +4,7 @@ import type {
   TrueLayerPersona,
   BudgetAnalysisResponse,
   DetectedDebtPayment,
-  TransactionBreakdownItem,
+  BreakdownItem,
 } from "@shared/schema";
 
 // Debt-related keywords for detection
@@ -185,11 +185,11 @@ function extractCategory(classification: string[]): string | undefined {
 export function analyzeBudget(input: BudgetEngineInput): BudgetAnalysisResponse {
   const { transactions, direct_debits = [], analysisMonths = 1 } = input;
 
-  // Categorize all transactions
-  const incomeTransactions: TransactionBreakdownItem[] = [];
-  const fixedTransactions: TransactionBreakdownItem[] = [];
-  const variableTransactions: TransactionBreakdownItem[] = [];
-  const discretionaryTransactions: TransactionBreakdownItem[] = [];
+  // Categorize all transactions - using BreakdownItem with amount in dollars (not cents)
+  const incomeItems: BreakdownItem[] = [];
+  const fixedCostsItems: BreakdownItem[] = [];
+  const variableEssentialsItems: BreakdownItem[] = [];
+  const discretionaryItems: BreakdownItem[] = [];
 
   let totalIncomeCents = 0;
   let totalFixedCents = 0;
@@ -199,26 +199,27 @@ export function analyzeBudget(input: BudgetEngineInput): BudgetAnalysisResponse 
   for (const tx of transactions) {
     const budgetCategory = categorizeTransaction(tx);
     const amountCents = Math.round(Math.abs(tx.amount) * 100);
+    const amount = Math.abs(tx.amount); // Amount in dollars for frontend
     const category = extractCategory(tx.transaction_classification);
-    const txRecord: TransactionBreakdownItem = { description: tx.description, amountCents, category };
+    const txRecord: BreakdownItem = { description: tx.description, amount, category };
 
     switch (budgetCategory) {
       case "income":
-        incomeTransactions.push(txRecord);
+        incomeItems.push(txRecord);
         totalIncomeCents += amountCents;
         break;
       case "fixed":
-        fixedTransactions.push(txRecord);
+        fixedCostsItems.push(txRecord);
         totalFixedCents += amountCents;
         break;
       case "variable":
-        variableTransactions.push(txRecord);
+        variableEssentialsItems.push(txRecord);
         totalVariableCents += amountCents;
         break;
       case "discretionary":
         // Only count debits as discretionary spending
         if (tx.amount < 0) {
-          discretionaryTransactions.push(txRecord);
+          discretionaryItems.push(txRecord);
           totalDiscretionaryCents += amountCents;
         }
         break;
@@ -230,11 +231,11 @@ export function analyzeBudget(input: BudgetEngineInput): BudgetAnalysisResponse 
     if (dd.amount > 0) {
       const amountCents = Math.round(dd.amount * 100);
       // Only add if not already counted in transactions
-      const alreadyCounted = fixedTransactions.some(
+      const alreadyCounted = fixedCostsItems.some(
         (t) => t.description.toUpperCase().includes(dd.name.toUpperCase())
       );
       if (!alreadyCounted) {
-        fixedTransactions.push({ description: `${dd.name} (Direct Debit)`, amountCents, category: "Bills > Direct Debit" });
+        fixedCostsItems.push({ description: `${dd.name} (Direct Debit)`, amount: dd.amount, category: "Bills > Direct Debit" });
         totalFixedCents += amountCents;
       }
     }
@@ -263,10 +264,10 @@ export function analyzeBudget(input: BudgetEngineInput): BudgetAnalysisResponse 
     safeToSpendCents,
     detectedDebtPayments,
     breakdown: {
-      incomeTransactions,
-      fixedTransactions,
-      variableTransactions,
-      discretionaryTransactions,
+      income: incomeItems,
+      fixedCosts: fixedCostsItems,
+      variableEssentials: variableEssentialsItems,
+      discretionary: discretionaryItems,
     },
     analysisMonths,
   };
