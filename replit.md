@@ -14,6 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, dashboard with ECharts visualizations, Payment Calendar with interactive event highlighting.
 
 ### Recent Updates (December 2024)
+- **Minimum Payment Rule Confirmation Dialog**: AI-discovered minimum payment rules now require explicit user confirmation before auto-populating form fields. Nested Radix Dialog pattern ensures proper UX flow. Users can accept or reject discovered rules.
 - **TrueLayer Integration**: Replaced Plaid with TrueLayer for UK Open Banking. New OAuth2 flow, encrypted token storage, transaction fetching via TrueLayer Data API. Budget analysis uses deterministic categorization from transaction data.
 - **Confirm and Save Plan**: Plans are now temporary until confirmed. The delete button has been replaced with a "Confirm and Save Plan" button. If users exit without confirming, their plan is automatically deleted. After confirmation, the button shows "Plan Saved!" and becomes disabled.
 - **Statement Guidance AI Assistant**: New AI-powered assistant helps users find their balance bucket breakdown on their bank statements. Accessible from Step 3 (Bucket Builder) of the Statement Wizard via "Help me find this on my statement" button. Uses Claude Sonnet 4.5 to provide bank-specific guidance based on UK credit card statement standards.

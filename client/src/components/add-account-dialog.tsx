@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Sparkles, CreditCard, Wallet, Landmark } from "lucide-react";
+import { Loader2, Sparkles, CreditCard, Wallet, Landmark, CheckCircle2 } from "lucide-react";
 import { AccountType } from "@shared/schema";
 import type { Account, LenderRuleDiscoveryResponse } from "@shared/schema";
 import { useAuth } from "@/lib/auth-context";
@@ -45,6 +45,8 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
   const [includesInterest, setIncludesInterest] = useState(false);
   
   const [discoveredRule, setDiscoveredRule] = useState<LenderRuleDiscoveryResponse | null>(null);
+  const [pendingRule, setPendingRule] = useState<LenderRuleDiscoveryResponse | null>(null);
+  const [showRuleConfirmation, setShowRuleConfirmation] = useState(false);
 
   useEffect(() => {
     if (account) {
@@ -85,28 +87,31 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
     setPercentage("");
     setIncludesInterest(false);
     setDiscoveredRule(null);
+    setPendingRule(null);
+    setShowRuleConfirmation(false);
     setEntryMethod("type-selection");
   };
 
   const discoverRuleMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/lender-rules/discover", {
+      const response = await apiRequest("POST", "/api/lender-rules/discover", {
         lenderName,
         country: user?.country || "US",
       });
+      // apiRequest returns a Response object, so we need to parse JSON
+      return await response.json();
     },
-    onSuccess: (data: any) => {
-      const ruleData = data as LenderRuleDiscoveryResponse;
-      setDiscoveredRule(ruleData);
-      if (ruleData.minPaymentRule) {
-        setFixedAmount((ruleData.minPaymentRule.fixedCents / 100).toString());
-        setPercentage((ruleData.minPaymentRule.percentageBps / 100).toString());
-        setIncludesInterest(ruleData.minPaymentRule.includesInterest);
+    onSuccess: (data: LenderRuleDiscoveryResponse) => {
+      if (data.minPaymentRule) {
+        setPendingRule(data);
+        setShowRuleConfirmation(true);
+      } else {
+        toast({
+          title: "No rule found",
+          description: "Could not find minimum payment rules for this lender. Please enter them manually.",
+          variant: "destructive",
+        });
       }
-      toast({
-        title: "Rule discovered!",
-        description: `Found minimum payment rule for ${lenderName}`,
-      });
     },
     onError: () => {
       toast({
@@ -116,6 +121,30 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
       });
     },
   });
+
+  const handleConfirmRule = () => {
+    if (pendingRule?.minPaymentRule) {
+      setFixedAmount((pendingRule.minPaymentRule.fixedCents / 100).toString());
+      setPercentage((pendingRule.minPaymentRule.percentageBps / 100).toString());
+      setIncludesInterest(pendingRule.minPaymentRule.includesInterest);
+      setDiscoveredRule(pendingRule);
+      toast({
+        title: "Rule applied",
+        description: "Minimum payment fields have been populated with the discovered rule.",
+      });
+    }
+    setShowRuleConfirmation(false);
+    setPendingRule(null);
+  };
+
+  const handleRejectRule = () => {
+    setShowRuleConfirmation(false);
+    setPendingRule(null);
+    toast({
+      title: "Rule not applied",
+      description: "You can enter the minimum payment details manually.",
+    });
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -424,60 +453,123 @@ export function AddAccountDialog({ open, onOpenChange, account }: AddAccountDial
     );
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-2xl">
-            {isEditing ? "Edit Account" : "Add Account"}
-          </DialogTitle>
-          <DialogDescription>
-            {isEditing 
-              ? "Update your account details" 
-              : entryMethod === "type-selection"
-                ? "Select your account type"
-                : `Add a ${selectedAccountType === AccountType.BNPL ? "BNPL" : "Loan"} account`}
-          </DialogDescription>
-        </DialogHeader>
+  const formatRuleDescription = (rule: LenderRuleDiscoveryResponse) => {
+    if (!rule.minPaymentRule) return "";
+    const { fixedCents, percentageBps, includesInterest } = rule.minPaymentRule;
+    const fixedStr = fixedCents > 0 ? `£${(fixedCents / 100).toFixed(2)}` : null;
+    const percentStr = percentageBps > 0 ? `${(percentageBps / 100).toFixed(1)}% of balance` : null;
+    const interestStr = includesInterest ? " plus interest" : "";
+    
+    if (fixedStr && percentStr) {
+      return `${fixedStr} or ${percentStr}${interestStr}, whichever is greater`;
+    } else if (fixedStr) {
+      return `${fixedStr}${interestStr}`;
+    } else if (percentStr) {
+      return `${percentStr}${interestStr}`;
+    }
+    return rule.ruleDescription || "";
+  };
 
-        {entryMethod === "type-selection" && renderTypeSelectionScreen()}
-        {entryMethod === "manual" && (
-          <>
-            {renderManualForm()}
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!isEditing) {
-                    setEntryMethod("type-selection");
-                  } else {
-                    onOpenChange(false);
-                    resetForm();
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">
+              {isEditing ? "Edit Account" : "Add Account"}
+            </DialogTitle>
+            <DialogDescription>
+              {isEditing 
+                ? "Update your account details" 
+                : entryMethod === "type-selection"
+                  ? "Select your account type"
+                  : `Add a ${selectedAccountType === AccountType.BNPL ? "BNPL" : "Loan"} account`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {entryMethod === "type-selection" && renderTypeSelectionScreen()}
+          {entryMethod === "manual" && (
+            <>
+              {renderManualForm()}
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!isEditing) {
+                      setEntryMethod("type-selection");
+                    } else {
+                      onOpenChange(false);
+                      resetForm();
+                    }
+                  }}
+                  data-testid="button-cancel"
+                >
+                  {!isEditing ? "Back" : "Cancel"}
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={
+                    saveMutation.isPending || 
+                    !lenderName || 
+                    !balance || 
+                    !apr || 
+                    !dueDay || 
+                    (!fixedAmount && !percentage)
                   }
-                }}
-                data-testid="button-cancel"
-              >
-                {!isEditing ? "Back" : "Cancel"}
+                  data-testid="button-save-account"
+                >
+                  {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isEditing ? "Update Account" : "Add Account"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+
+        {/* Nested Rule Confirmation Dialog */}
+        <Dialog open={showRuleConfirmation} onOpenChange={setShowRuleConfirmation}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                Minimum Payment Rule Discovered
+              </DialogTitle>
+              <DialogDescription>
+                Based on our research of <span className="font-semibold">{lenderName}</span>, 
+                we found the following minimum payment rule:
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {pendingRule && (
+                <Card className="p-4 bg-primary/5 border-primary/20">
+                  <p className="font-medium text-foreground">
+                    {formatRuleDescription(pendingRule)}
+                  </p>
+                  {pendingRule.ruleDescription && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {pendingRule.ruleDescription}
+                    </p>
+                  )}
+                </Card>
+              )}
+              <p className="text-sm text-muted-foreground">
+                Would you like to use this rule to populate the minimum payment fields?
+              </p>
+            </div>
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={handleRejectRule} data-testid="button-reject-rule">
+                No, I'll enter manually
               </Button>
-              <Button
-                onClick={handleSave}
-                disabled={
-                  saveMutation.isPending || 
-                  !lenderName || 
-                  !balance || 
-                  !apr || 
-                  !dueDay || 
-                  (!fixedAmount && !percentage)
-                }
-                data-testid="button-save-account"
-              >
-                {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isEditing ? "Update Account" : "Add Account"}
+              <Button onClick={handleConfirmRule} data-testid="button-confirm-rule">
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Yes, apply this rule
               </Button>
             </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+          </DialogContent>
+        </Dialog>
+      </Dialog>
+    </>
   );
 }

@@ -574,14 +574,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check cache first
       const existing = await storage.getLenderRule(lenderName, country);
       if (existing) {
-        return res.json(existing);
+        // Format as LenderRuleDiscoveryResponse
+        return res.json({
+          lenderName: existing.lenderName,
+          ruleDescription: existing.ruleDescription || '',
+          minPaymentRule: {
+            fixedCents: existing.fixedCents || 0,
+            percentageBps: existing.percentageBps || 0,
+            includesInterest: existing.includesInterest || false,
+          },
+          confidence: 'high',
+        });
       }
 
       // Discover using AI
       const result = await discoverLenderRule(lenderName, country);
       
       // Save to database
-      const rule = await storage.createLenderRule({
+      await storage.createLenderRule({
         id: randomUUID(),
         lenderName: result.lenderName,
         country,
@@ -591,7 +601,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         includesInterest: result.minPaymentRule.includesInterest,
       });
 
-      res.json(rule);
+      // Return the properly formatted response
+      res.json(result);
     } catch (error: any) {
       res.status(500).send({ message: error.message || "Failed to discover lender rule" });
     }
