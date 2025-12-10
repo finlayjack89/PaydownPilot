@@ -3,6 +3,8 @@ import type {
   TrueLayerDirectDebit,
   TrueLayerPersona,
   BudgetAnalysisResponse,
+  DetectedDebtPayment,
+  TransactionBreakdownItem,
 } from "@shared/schema";
 
 // Debt-related keywords for detection
@@ -93,21 +95,43 @@ function isInternalTransfer(tx: TrueLayerTransaction): boolean {
   return false;
 }
 
-function detectDebtPayments(transactions: TrueLayerTransaction[]): string[] {
-  const detectedDebts = new Set<string>();
+function detectDebtPayments(transactions: TrueLayerTransaction[]): DetectedDebtPayment[] {
+  const detectedDebts = new Map<string, DetectedDebtPayment>();
 
   for (const tx of transactions) {
+    // Only look at debits (negative amounts)
+    if (tx.amount >= 0) continue;
+    
     const upperDesc = tx.description.toUpperCase();
     for (const keyword of DEBT_KEYWORDS) {
       if (upperDesc.includes(keyword.toUpperCase())) {
-        // Clean up the keyword for display
-        detectedDebts.add(keyword);
+        const existingDebt = detectedDebts.get(keyword);
+        const amountCents = Math.round(Math.abs(tx.amount) * 100);
+        
+        // Determine debt type
+        let type = "credit_card";
+        if (keyword.includes("LOAN") || keyword === "PROVIDENT" || keyword === "QUICKQUID" || keyword === "WONGA" || keyword === "PAYDAY") {
+          type = "loan";
+        } else if (["KLARNA", "CLEARPAY", "AFTERPAY", "LAYBUY"].includes(keyword)) {
+          type = "bnpl";
+        }
+        
+        if (existingDebt) {
+          // Add to existing amount
+          existingDebt.amountCents += amountCents;
+        } else {
+          detectedDebts.set(keyword, {
+            description: keyword,
+            amountCents,
+            type,
+          });
+        }
         break;
       }
     }
   }
 
-  return Array.from(detectedDebts);
+  return Array.from(detectedDebts.values());
 }
 
 function categorizeTransaction(tx: TrueLayerTransaction): "income" | "fixed" | "variable" | "discretionary" {
@@ -150,14 +174,22 @@ export interface BudgetEngineInput {
   analysisMonths?: number; // Default to 1 for single-month snapshots
 }
 
+function extractCategory(classification: string[]): string | undefined {
+  // Return the first classification as the primary category
+  if (classification.length > 0) {
+    return classification.join(" > ");
+  }
+  return undefined;
+}
+
 export function analyzeBudget(input: BudgetEngineInput): BudgetAnalysisResponse {
   const { transactions, direct_debits = [], analysisMonths = 1 } = input;
 
   // Categorize all transactions
-  const incomeTransactions: Array<{ description: string; amountCents: number }> = [];
-  const fixedTransactions: Array<{ description: string; amountCents: number }> = [];
-  const variableTransactions: Array<{ description: string; amountCents: number }> = [];
-  const discretionaryTransactions: Array<{ description: string; amountCents: number }> = [];
+  const incomeTransactions: TransactionBreakdownItem[] = [];
+  const fixedTransactions: TransactionBreakdownItem[] = [];
+  const variableTransactions: TransactionBreakdownItem[] = [];
+  const discretionaryTransactions: TransactionBreakdownItem[] = [];
 
   let totalIncomeCents = 0;
   let totalFixedCents = 0;
@@ -165,11 +197,12 @@ export function analyzeBudget(input: BudgetEngineInput): BudgetAnalysisResponse 
   let totalDiscretionaryCents = 0;
 
   for (const tx of transactions) {
-    const category = categorizeTransaction(tx);
+    const budgetCategory = categorizeTransaction(tx);
     const amountCents = Math.round(Math.abs(tx.amount) * 100);
-    const txRecord = { description: tx.description, amountCents };
+    const category = extractCategory(tx.transaction_classification);
+    const txRecord: TransactionBreakdownItem = { description: tx.description, amountCents, category };
 
-    switch (category) {
+    switch (budgetCategory) {
       case "income":
         incomeTransactions.push(txRecord);
         totalIncomeCents += amountCents;
@@ -201,7 +234,7 @@ export function analyzeBudget(input: BudgetEngineInput): BudgetAnalysisResponse 
         (t) => t.description.toUpperCase().includes(dd.name.toUpperCase())
       );
       if (!alreadyCounted) {
-        fixedTransactions.push({ description: `${dd.name} (Direct Debit)`, amountCents });
+        fixedTransactions.push({ description: `${dd.name} (Direct Debit)`, amountCents, category: "Bills > Direct Debit" });
         totalFixedCents += amountCents;
       }
     }

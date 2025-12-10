@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DollarSign, TrendingUp, Wallet, ChevronRight, CheckCircle2 } from "lucide-react";
+import { DollarSign, TrendingUp, Wallet, CreditCard, ChevronRight, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
@@ -11,17 +11,24 @@ import { IncreaseBudgetView } from "./increase-budget-view";
 import { useAuth } from "@/lib/auth-context";
 
 interface BudgetAnalysisData {
-  monthlyNetIncomeCents: number;
-  disposableIncomeCents: number;
-  currentBudgetCents: number;
-  nonEssentialSubscriptions: Array<{
-    name: string;
-    monthlyCostCents: number;
+  averageMonthlyIncomeCents: number;
+  fixedCostsCents: number;
+  variableEssentialsCents: number;
+  discretionaryCents: number;
+  safeToSpendCents: number;
+  detectedDebtPayments: Array<{
+    description: string;
+    amountCents: number;
+    type: string;
   }>;
-  nonEssentialDiscretionaryCategories: Array<{
-    category: string;
-    monthlyCostCents: number;
-  }>;
+  breakdown: {
+    income: Array<{ description: string; amount: number; category?: string }>;
+    fixedCosts: Array<{ description: string; amount: number; category?: string }>;
+    variableEssentials: Array<{ description: string; amount: number; category?: string }>;
+    discretionary: Array<{ description: string; amount: number; category?: string }>;
+  };
+  transactionCount: number;
+  directDebitCount: number;
 }
 
 interface BudgetAnalysisViewProps {
@@ -36,12 +43,11 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
   const [showIncreaseView, setShowIncreaseView] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
-  // Save analyzed budget mutation
   const saveBudgetMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("POST", "/api/budget/save-analyzed-budget", {
-        currentBudgetCents: analysisData.currentBudgetCents,
-        potentialBudgetCents: null, // Will be set when optimizing
+        currentBudgetCents: analysisData.safeToSpendCents,
+        potentialBudgetCents: null,
       });
     },
     onSuccess: () => {
@@ -73,38 +79,57 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
     setShowIncreaseView(true);
   };
 
-  // If showing increase view, render that instead
   if (showIncreaseView) {
     return (
       <IncreaseBudgetView
         open={open}
         onOpenChange={onOpenChange}
-        analysisData={analysisData}
+        analysisData={{
+          monthlyNetIncomeCents: analysisData.averageMonthlyIncomeCents,
+          disposableIncomeCents: analysisData.safeToSpendCents,
+          currentBudgetCents: analysisData.safeToSpendCents,
+          nonEssentialSubscriptions: [],
+          nonEssentialDiscretionaryCategories: analysisData.breakdown.discretionary.map(d => ({
+            category: d.description,
+            monthlyCostCents: Math.round(d.amount * 100),
+          })),
+        }}
         onBack={() => setShowIncreaseView(false)}
       />
     );
   }
 
-  const currency = user?.currency || "USD";
+  const currency = user?.currency || "GBP";
+  
+  const disposableIncome = analysisData.averageMonthlyIncomeCents - 
+    analysisData.fixedCostsCents - 
+    analysisData.variableEssentialsCents;
 
   const statsCards = [
     {
-      title: "Monthly Net Income",
-      value: formatCurrency(analysisData.monthlyNetIncomeCents, currency),
-      description: "Your total monthly income after taxes",
+      title: "Monthly Income",
+      value: formatCurrency(analysisData.averageMonthlyIncomeCents, currency),
+      description: "Average monthly income detected",
       icon: DollarSign,
       iconColor: "text-green-500",
     },
     {
+      title: "Fixed Costs",
+      value: formatCurrency(analysisData.fixedCostsCents, currency),
+      description: "Regular bills & subscriptions",
+      icon: CreditCard,
+      iconColor: "text-red-500",
+    },
+    {
       title: "Disposable Income",
-      value: formatCurrency(analysisData.disposableIncomeCents, currency),
-      description: "Income after essential expenses",
+      value: formatCurrency(disposableIncome, currency),
+      description: "Income after essential costs",
       icon: Wallet,
       iconColor: "text-blue-500",
     },
     {
-      title: "Suggested Budget",
-      value: formatCurrency(analysisData.currentBudgetCents, currency),
+      title: "Safe to Spend",
+      value: formatCurrency(analysisData.safeToSpendCents, currency),
       description: "Recommended for debt payments",
       icon: TrendingUp,
       iconColor: "text-purple-500",
@@ -139,12 +164,11 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
           <div className="space-y-6 py-4">
             <div className="text-center space-y-2">
               <p className="text-muted-foreground">
-                Based on your transaction history, we've identified your financial capacity:
+                Based on {analysisData.transactionCount} transactions and {analysisData.directDebitCount} direct debits:
               </p>
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {statsCards.map((stat, index) => (
                 <Card key={index} data-testid={`card-budget-stat-${index}`}>
                   <CardContent className="p-4">
@@ -161,9 +185,27 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
               ))}
             </div>
 
-            {/* Optimization Opportunity */}
-            {(analysisData.nonEssentialSubscriptions.length > 0 || 
-              analysisData.nonEssentialDiscretionaryCategories.length > 0) && (
+            {analysisData.detectedDebtPayments.length > 0 && (
+              <Card className="border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/20">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <CreditCard className="h-5 w-5 text-amber-500 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">Existing Debt Payments Detected</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        We found {analysisData.detectedDebtPayments.length} existing credit card or loan payments 
+                        in your transaction history totalling {formatCurrency(
+                          analysisData.detectedDebtPayments.reduce((sum, p) => sum + p.amountCents, 0),
+                          currency
+                        )} per month.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {analysisData.discretionaryCents > 0 && (
               <Card className="border-orange-200 dark:border-orange-900 bg-orange-50 dark:bg-orange-950/20">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
@@ -171,8 +213,7 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
                     <div className="flex-1">
                       <p className="font-medium text-sm">Budget Optimization Available</p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        We found {analysisData.nonEssentialSubscriptions.length} subscriptions 
-                        and {analysisData.nonEssentialDiscretionaryCategories.length} spending categories 
+                        We found {formatCurrency(analysisData.discretionaryCents, currency)} in discretionary spending 
                         that you could reduce to increase your debt payment budget.
                       </p>
                     </div>
@@ -181,7 +222,6 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
               </Card>
             )}
 
-            {/* Action Buttons */}
             <div className="flex gap-3">
               <Button
                 className="flex-1"
@@ -203,7 +243,6 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
               </Button>
             </div>
 
-            {/* Info Text */}
             <p className="text-xs text-muted-foreground text-center">
               You can always adjust your budget later in the Budget settings
             </p>

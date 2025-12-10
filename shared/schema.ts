@@ -416,6 +416,20 @@ export interface TrueLayerPersona {
   standing_orders?: TrueLayerStandingOrder[];
 }
 
+// Detected debt payment structure
+export interface DetectedDebtPayment {
+  description: string;
+  amountCents: number;
+  type: string;
+}
+
+// Transaction breakdown item with category
+export interface TransactionBreakdownItem {
+  description: string;
+  amountCents: number;
+  category?: string;
+}
+
 // Budget Analysis Response - Output from Budget Engine
 export interface BudgetAnalysisResponse {
   averageMonthlyIncomeCents: number;
@@ -423,12 +437,12 @@ export interface BudgetAnalysisResponse {
   variableEssentialsCents: number; // Groceries, Transport
   discretionaryCents: number;
   safeToSpendCents: number; // Income - Fixed - Variable
-  detectedDebtPayments: string[]; // Lender names found
+  detectedDebtPayments: DetectedDebtPayment[]; // Lender payments found with details
   breakdown: {
-    incomeTransactions: Array<{ description: string; amountCents: number }>;
-    fixedTransactions: Array<{ description: string; amountCents: number }>;
-    variableTransactions: Array<{ description: string; amountCents: number }>;
-    discretionaryTransactions: Array<{ description: string; amountCents: number }>;
+    incomeTransactions: TransactionBreakdownItem[];
+    fixedTransactions: TransactionBreakdownItem[];
+    variableTransactions: TransactionBreakdownItem[];
+    discretionaryTransactions: TransactionBreakdownItem[];
   };
   analysisMonths: number;
 }

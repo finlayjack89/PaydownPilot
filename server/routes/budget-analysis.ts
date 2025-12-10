@@ -11,6 +11,7 @@ import { analyzeBudget, analyzePersona } from "../services/budget-engine";
 import { getPersonaById, PERSONAS } from "../mock-data/truelayer-personas";
 import { budgetAnalyzeRequestSchema } from "@shared/schema";
 import { z } from "zod";
+import { fetchAllTransactions, fetchAllDirectDebits, refreshAccessToken, encryptToken } from "../truelayer";
 
 // Request validation schemas
 const saveBudgetSchema = z.object({
@@ -21,24 +22,19 @@ const saveBudgetSchema = z.object({
 export function registerBudgetAnalysisRoutes(app: Express): void {
   /**
    * POST /api/budget/analyze-transactions
-   * Fetches transactions from TrueLayer and analyzes them with Claude
-   * to determine the user's current budget
-   * 
-   * NOTE: TrueLayer transaction fetching will be implemented in the next step.
-   * For now, this endpoint returns a 501 Not Implemented status.
+   * Fetches transactions from TrueLayer and analyzes them with the budget engine
+   * to determine the user's current budget and suggest a safe-to-spend amount
    */
   app.post("/api/budget/analyze-transactions", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       
-      // Check if user is a guest
       if (userId === "guest-user") {
         return res.status(403).send({ 
           message: "Budget analysis is not available for guest users. Please create an account to connect your bank and analyze transactions." 
         });
       }
       
-      // Get the user's TrueLayer item
       const trueLayerItem = await storage.getTrueLayerItemByUserId(userId);
       if (!trueLayerItem) {
         return res.status(404).send({ 
@@ -46,7 +42,6 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
         });
       }
       
-      // Decrypt the access token
       let accessToken: string;
       try {
         accessToken = decryptToken(trueLayerItem.accessTokenEncrypted);
@@ -57,13 +52,88 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
         });
       }
       
-      // TODO: Implement TrueLayer transaction fetching
-      // The TrueLayer service will be implemented in the next step
-      // For now, return a stub response indicating this feature is pending implementation
-      console.log(`[Budget Analysis] TrueLayer integration pending for user ${userId}`);
+      const isExpired = trueLayerItem.consentExpiresAt && 
+        new Date(trueLayerItem.consentExpiresAt) < new Date();
       
-      return res.status(501).send({
-        message: "TrueLayer transaction fetching is not yet implemented. Please use the /api/budget/analyze endpoint with persona data for testing."
+      if (isExpired && trueLayerItem.refreshTokenEncrypted) {
+        try {
+          const refreshToken = decryptToken(trueLayerItem.refreshTokenEncrypted);
+          const newTokens = await refreshAccessToken(refreshToken);
+          
+          accessToken = newTokens.access_token;
+          
+          await storage.updateTrueLayerItem(trueLayerItem.id, {
+            accessTokenEncrypted: encryptToken(newTokens.access_token),
+            refreshTokenEncrypted: newTokens.refresh_token 
+              ? encryptToken(newTokens.refresh_token) 
+              : trueLayerItem.refreshTokenEncrypted,
+            consentExpiresAt: new Date(Date.now() + newTokens.expires_in * 1000),
+          });
+        } catch (refreshError) {
+          console.error("[Budget Analysis] Token refresh failed:", refreshError);
+          return res.status(401).send({ 
+            message: "Bank connection expired. Please reconnect your bank.",
+            needsReauth: true 
+          });
+        }
+      }
+      
+      const days = req.body.days || 90;
+      let transactions;
+      let directDebits;
+      
+      try {
+        transactions = await fetchAllTransactions(accessToken, Math.min(Math.max(days, 30), 365));
+        directDebits = await fetchAllDirectDebits(accessToken);
+        console.log(`[Budget Analysis] Fetched ${transactions.length} transactions and ${directDebits.length} direct debits for user ${userId}`);
+      } catch (error: any) {
+        console.error("Error fetching data from TrueLayer:", error);
+        return res.status(500).send({ 
+          message: "Failed to fetch transactions from your bank. Please try again later." 
+        });
+      }
+      
+      if (!transactions || transactions.length === 0) {
+        return res.status(404).send({ 
+          message: "No transactions found in the specified period. Please check your bank account has transaction history." 
+        });
+      }
+      
+      const analysisMonths = Math.max(1, Math.round(days / 30));
+      
+      const analysis = analyzeBudget({
+        transactions: transactions.map(t => ({
+          description: t.description,
+          amount: t.amount,
+          transaction_classification: t.transaction_classification,
+          transaction_type: t.transaction_type as "CREDIT" | "DEBIT" | "STANDING_ORDER" | "DIRECT_DEBIT" | "FEE",
+          date: t.timestamp,
+        })),
+        direct_debits: directDebits.map(dd => ({
+          name: dd.name,
+          amount: dd.previous_payment_amount || 0,
+        })),
+        analysisMonths,
+      });
+      
+      console.log(`[Budget Analysis] Results for user ${userId}:`, {
+        income: analysis.averageMonthlyIncomeCents / 100,
+        fixed: analysis.fixedCostsCents / 100,
+        variable: analysis.variableEssentialsCents / 100,
+        safeToSpend: analysis.safeToSpendCents / 100,
+        debtsDetected: analysis.detectedDebtPayments,
+      });
+      
+      await storage.updateTrueLayerItem(trueLayerItem.id, {
+        lastSyncedAt: new Date()
+      });
+      
+      res.json({
+        success: true,
+        analysis,
+        transactionCount: transactions.length,
+        directDebitCount: directDebits.length,
+        message: "Transaction analysis completed successfully"
       });
       
     } catch (error: any) {
