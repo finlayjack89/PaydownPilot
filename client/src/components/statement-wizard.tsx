@@ -959,24 +959,24 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
             </DialogDescription>
           </DialogHeader>
           
-          {discoveredRule && (
+          {discoveredRule && discoveredRule.minPaymentRule && (
             <div className="space-y-4">
               <Card className="p-4 bg-primary/5 border-primary/20">
                 <p className="text-sm font-medium mb-3">{discoveredRule.ruleDescription}</p>
                 <div className="grid gap-2 text-sm">
-                  {discoveredRule.minPaymentRule.fixedCents > 0 && (
+                  {(discoveredRule.minPaymentRule.fixedCents ?? 0) > 0 && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Fixed minimum:</span>
                       <span className="font-mono font-medium">
-                        {getCurrencySymbol()}{(discoveredRule.minPaymentRule.fixedCents / 100).toFixed(2)}
+                        {getCurrencySymbol()}{((discoveredRule.minPaymentRule.fixedCents ?? 0) / 100).toFixed(2)}
                       </span>
                     </div>
                   )}
-                  {discoveredRule.minPaymentRule.percentageBps > 0 && (
+                  {(discoveredRule.minPaymentRule.percentageBps ?? 0) > 0 && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Percentage of balance:</span>
                       <span className="font-mono font-medium">
-                        {(discoveredRule.minPaymentRule.percentageBps / 100).toFixed(2)}%
+                        {((discoveredRule.minPaymentRule.percentageBps ?? 0) / 100).toFixed(2)}%
                       </span>
                     </div>
                   )}
