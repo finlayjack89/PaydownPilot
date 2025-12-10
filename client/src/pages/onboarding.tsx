@@ -126,13 +126,13 @@ export default function Onboarding() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <header className="border-b shrink-0">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
+        <div className="flex h-16 items-center justify-between px-6">
           <Logo />
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col container mx-auto max-w-3xl px-4 py-12">
+      <main className="flex-1 flex flex-col px-6 py-12">
         <ProgressStepper steps={steps} currentStep={currentStep} />
 
         {currentStep === 1 && (

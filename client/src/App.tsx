@@ -98,22 +98,26 @@ function AppLayout({ children }: { children: ReactNode }) {
   const showSidebar = user && !isLoading && !['/login', '/signup', '/onboarding'].includes(location);
   
   if (!showSidebar) {
+    // No sidebar - render children directly without SidebarProvider
     return <>{children}</>;
   }
   
+  // With sidebar - wrap in SidebarProvider
   return (
-    <div className="flex h-screen w-full">
-      <AppSidebar />
-      <div className="flex flex-col flex-1">
-        <header className="flex items-center justify-between p-2 border-b">
-          <SidebarTrigger data-testid="button-sidebar-toggle" />
-          <ThemeToggle />
-        </header>
-        <main className="flex-1 overflow-auto">
-          {children}
-        </main>
+    <SidebarProvider>
+      <div className="flex h-screen w-full">
+        <AppSidebar />
+        <div className="flex flex-col flex-1">
+          <header className="flex items-center justify-between p-2 border-b">
+            <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <ThemeToggle />
+          </header>
+          <main className="flex-1 overflow-auto">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }
 
@@ -123,11 +127,9 @@ function App() {
       <ThemeProvider>
         <AuthProvider>
           <TooltipProvider>
-            <SidebarProvider>
-              <AppLayout>
-                <Router />
-              </AppLayout>
-            </SidebarProvider>
+            <AppLayout>
+              <Router />
+            </AppLayout>
             <Toaster />
           </TooltipProvider>
         </AuthProvider>
