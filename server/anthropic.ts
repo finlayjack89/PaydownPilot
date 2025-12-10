@@ -186,3 +186,125 @@ ${Array.isArray(planData) ?
 
   return message.content[0].type === 'text' ? message.content[0].text : '';
 }
+
+export interface StatementGuidanceResult {
+  bankName: string;
+  guidance: string;
+  sources: {
+    type: 'official' | 'community' | 'general';
+    description: string;
+  }[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export async function getStatementBucketGuidance(
+  bankName: string,
+  country: string = 'UK',
+  conversationHistory: ChatMessage[] = []
+): Promise<StatementGuidanceResult> {
+  const systemPrompt = `You are a helpful financial assistant who helps users find the breakdown of their credit card balance (into different "buckets" like purchases, balance transfers, cash advances) from their bank statements.
+
+Your job is to provide step-by-step guidance on WHERE to find this information on their credit card statement for "${bankName}" in the ${country}.
+
+UK credit card statements typically break down balances in an "Interest Summary Table" or similar section. Different banks format this differently:
+
+For your guidance, include:
+1. SPECIFIC section names to look for on the statement (e.g., "Interest Charge Calculation", "Interest Summary", "Balance Summary")
+2. What page it's typically found on (e.g., "usually on page 2 or 3")
+3. What the breakdown typically shows (purchases at X%, balance transfers at Y%, etc.)
+4. How to identify promotional 0% rates vs standard rates
+5. Where to find the promotional expiry dates
+
+IMPORTANT CONTEXT FROM UK FINANCIAL GUIDANCE:
+- Since 2011, UK credit cards must prioritize payments to highest-rate debt first
+- Statements show separate interest rates for: Purchases, Balance Transfers, Cash Advances, Money Transfers
+- Money Saving Expert (MSE) is a highly authoritative UK source for credit card guidance
+- Common UK lenders: Barclays, HSBC, Lloyds, NatWest, Nationwide, Santander, Tesco Bank, Virgin Money, American Express, MBNA
+
+If you don't have specific information about this bank, provide general guidance about UK credit card statements and suggest the user:
+1. Download the full PDF statement (not just the transaction list from online banking)
+2. Look for an "Interest Charge Calculation" or "Interest Summary" section
+3. Contact the bank's customer service if they can't find it
+
+Be helpful, specific, and encouraging. Keep your response focused and practical.`;
+
+  const userPrompt = `Help me find where to look on my ${bankName} credit card statement to find the breakdown of my balance into purchases, balance transfers, cash advances, etc. with their different interest rates.`;
+
+  const validMessages = conversationHistory.filter(m => m.content && m.content.trim().length > 0);
+  
+  const messages: Array<{role: 'user' | 'assistant', content: string}> = validMessages.length > 0
+    ? validMessages
+    : [{ role: 'user', content: userPrompt }];
+
+  if (messages.length === 0 || !messages[0].content) {
+    messages.unshift({ role: 'user', content: userPrompt });
+  }
+  
+  if (messages[0].role !== 'user') {
+    messages.unshift({ role: 'user', content: userPrompt });
+  }
+
+  console.log('[Statement Guidance] Final messages structure:', messages.map(m => ({ role: m.role, contentLength: m.content?.length || 0 })));
+
+  const message = await anthropic.messages.create({
+    max_tokens: 1500,
+    system: systemPrompt,
+    messages,
+    model: DEFAULT_MODEL_STR,
+  });
+
+  const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
+
+  const sources: StatementGuidanceResult['sources'] = [];
+  
+  if (responseText.toLowerCase().includes('money saving expert') || responseText.toLowerCase().includes('mse')) {
+    sources.push({ type: 'community', description: 'Money Saving Expert guidance' });
+  }
+  if (responseText.toLowerCase().includes('official') || responseText.toLowerCase().includes('bank website')) {
+    sources.push({ type: 'official', description: `${bankName} official documentation` });
+  }
+  if (sources.length === 0) {
+    sources.push({ type: 'general', description: 'UK credit card statement standards' });
+  }
+
+  const knownUkBanks = ['barclays', 'hsbc', 'lloyds', 'natwest', 'nationwide', 'santander', 'tesco', 'virgin', 'amex', 'american express', 'mbna', 'halifax', 'rbs', 'tsb', 'monzo', 'starling'];
+  const isKnownBank = knownUkBanks.some(bank => bankName.toLowerCase().includes(bank));
+
+  return {
+    bankName,
+    guidance: responseText,
+    sources,
+    confidence: isKnownBank ? 'high' : 'medium',
+  };
+}
+
+export async function chatStatementGuidance(
+  bankName: string,
+  userMessage: string,
+  conversationHistory: ChatMessage[] = []
+): Promise<string> {
+  const initialUserMessage = `Help me find where to look on my ${bankName} credit card statement to find the breakdown of my balance into purchases, balance transfers, cash advances, etc. with their different interest rates.`;
+  
+  const validHistory = conversationHistory.filter(m => m.content && m.content.trim().length > 0);
+  
+  let fullHistory: ChatMessage[] = [];
+  
+  if (validHistory.length === 0) {
+    fullHistory = [{ role: 'user', content: userMessage }];
+  } else {
+    if (validHistory[0].role === 'assistant') {
+      fullHistory = [
+        { role: 'user', content: initialUserMessage },
+        ...validHistory,
+        { role: 'user', content: userMessage }
+      ];
+    } else {
+      fullHistory = [...validHistory, { role: 'user', content: userMessage }];
+    }
+  }
+  
+  console.log('[Statement Guidance Chat] Messages being sent:', JSON.stringify(fullHistory.map(m => ({ role: m.role, contentLength: m.content?.length || 0 }))));
+  
+  const result = await getStatementBucketGuidance(bankName, 'UK', fullHistory);
+  return result.guidance;
+}

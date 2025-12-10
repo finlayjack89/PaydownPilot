@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
 import { setupAuth, requireAuth, hashPassword } from "./auth";
-import { discoverLenderRule, generatePlanExplanation, answerPlanQuestion } from "./anthropic";
+import { discoverLenderRule, generatePlanExplanation, answerPlanQuestion, getStatementBucketGuidance, chatStatementGuidance } from "./anthropic";
 import { 
   insertUserSchema, updateUserProfileSchema, insertAccountSchema, insertBudgetSchema, 
   insertPreferenceSchema, accountWithBucketsRequestSchema,
@@ -581,6 +581,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(rule);
     } catch (error: any) {
       res.status(500).send({ message: error.message || "Failed to discover lender rule" });
+    }
+  });
+
+  // ==================== Statement Guidance Routes (AI) ====================
+  app.post("/api/statement-guidance", requireAuth, async (req, res) => {
+    try {
+      const { bankName, country = "UK" } = req.body;
+      
+      if (!bankName) {
+        return res.status(400).send({ message: "bankName is required" });
+      }
+
+      const result = await getStatementBucketGuidance(bankName, country);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[Statement Guidance] Error:", error);
+      res.status(500).send({ message: error.message || "Failed to get statement guidance" });
+    }
+  });
+
+  app.post("/api/statement-guidance/chat", requireAuth, async (req, res) => {
+    try {
+      const { bankName, message, conversationHistory = [] } = req.body;
+      
+      if (!bankName || !message) {
+        return res.status(400).send({ message: "bankName and message are required" });
+      }
+
+      if (typeof message !== 'string' || message.trim().length === 0) {
+        return res.status(400).send({ message: "message cannot be empty" });
+      }
+
+      const validHistory = Array.isArray(conversationHistory) 
+        ? conversationHistory.filter((m: any) => 
+            m && typeof m.content === 'string' && m.content.trim().length > 0 &&
+            (m.role === 'user' || m.role === 'assistant')
+          )
+        : [];
+
+      const response = await chatStatementGuidance(bankName, message.trim(), validHistory);
+      res.json({ response });
+    } catch (error: any) {
+      console.error("[Statement Guidance Chat] Error:", error);
+      res.status(500).send({ message: error.message || "Failed to get chat response" });
     }
   });
 

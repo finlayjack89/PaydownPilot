@@ -14,6 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, dashboard with ECharts visualizations, Payment Calendar with interactive event highlighting.
 
 ### Recent Updates (December 2024)
+- **Statement Guidance AI Assistant**: New AI-powered assistant helps users find their balance bucket breakdown on their bank statements. Accessible from Step 3 (Bucket Builder) of the Statement Wizard via "Help me find this on my statement" button. Uses Claude Sonnet 4.5 to provide bank-specific guidance based on UK credit card statement standards.
 - **Comprehensive E2E Testing**: Full end-to-end testing completed with 15 diverse test personas covering the complete user journey.
 - **AI Model Fix**: Updated Anthropic model names to Replit AI Integrations compatible format (`claude-sonnet-4-5`, `claude-haiku-4-5`).
 - **AI Chat Improvements**: ChatGPT-style conversation history with user/assistant message bubbles; uses Claude Haiku for fast responses.
@@ -31,7 +32,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend
 - **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication, Plaid SDK. Python backend (FastAPI) for the optimization engine.
-- **API Structure**: RESTful endpoints (`/api/auth`, `/api/accounts`, `/api/budget`, `/api/preferences`, `/api/plans`, `/api/plaid/*`, `/api/lender-rules/*`).
+- **API Structure**: RESTful endpoints (`/api/auth`, `/api/accounts`, `/api/budget`, `/api/preferences`, `/api/plans`, `/api/plaid/*`, `/api/lender-rules/*`, `/api/statement-guidance/*`).
 - **Authentication & Security**: Scrypt password hashing, express-session management (30-minute timeout), AES-256-GCM encryption for Plaid tokens, secure credential storage.
 - **Plaid Integration**: Bank connection via Plaid Link, encrypted access token storage, liability account syncing.
 - **AI Research System**: Claude 4.5 Sonnet for automated lender rule discovery with human verification, intelligent caching of verified rules.

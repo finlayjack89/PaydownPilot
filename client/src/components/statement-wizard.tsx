@@ -9,7 +9,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Sparkles, Plus, Trash2, ArrowLeft, ArrowRight, CreditCard, Layers, CircleDot, ChevronRight } from "lucide-react";
+import { Loader2, Sparkles, Plus, Trash2, ArrowLeft, ArrowRight, CreditCard, Layers, CircleDot, ChevronRight, HelpCircle } from "lucide-react";
+import { StatementGuidanceButton } from "./statement-guidance-assistant";
 import { AccountType, BucketType } from "@shared/schema";
 import type { Account, LenderRuleDiscoveryResponse, DebtBucket } from "@shared/schema";
 import { useAuth } from "@/lib/auth-context";
@@ -783,7 +784,10 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
 
         {/* Add Bucket Buttons */}
         <div className="space-y-2">
-          <Label className="text-sm">Add Balance Type</Label>
+          <div className="flex items-center justify-between">
+            <Label className="text-sm">Add Balance Type</Label>
+            <StatementGuidanceButton bankName={lenderName} />
+          </div>
           <div className="flex flex-wrap gap-2">
             {Object.entries(BUCKET_TYPE_LABELS).map(([type, label]) => {
               const colors = BUCKET_TYPE_COLORS[type];
