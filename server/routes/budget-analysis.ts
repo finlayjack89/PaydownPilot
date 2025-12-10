@@ -1,7 +1,6 @@
 import type { Express } from "express";
 import { requireAuth } from "../auth";
 import { storage } from "../storage";
-import { fetchTransactions } from "../plaid";
 import { decryptToken } from "../encryption";
 import { 
   analyzeTransactionsWithClaude, 
@@ -22,8 +21,11 @@ const saveBudgetSchema = z.object({
 export function registerBudgetAnalysisRoutes(app: Express): void {
   /**
    * POST /api/budget/analyze-transactions
-   * Fetches transactions from Plaid and analyzes them with Claude
+   * Fetches transactions from TrueLayer and analyzes them with Claude
    * to determine the user's current budget
+   * 
+   * NOTE: TrueLayer transaction fetching will be implemented in the next step.
+   * For now, this endpoint returns a 501 Not Implemented status.
    */
   app.post("/api/budget/analyze-transactions", requireAuth, async (req, res) => {
     try {
@@ -36,9 +38,9 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
         });
       }
       
-      // Get the user's Plaid item
-      const plaidItem = await storage.getPlaidItemByUserId(userId);
-      if (!plaidItem) {
+      // Get the user's TrueLayer item
+      const trueLayerItem = await storage.getTrueLayerItemByUserId(userId);
+      if (!trueLayerItem) {
         return res.status(404).send({ 
           message: "No bank account connected. Please connect your bank account first to analyze transactions." 
         });
@@ -47,78 +49,21 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
       // Decrypt the access token
       let accessToken: string;
       try {
-        accessToken = decryptToken(plaidItem.accessTokenEncrypted);
+        accessToken = decryptToken(trueLayerItem.accessTokenEncrypted);
       } catch (error: any) {
-        console.error("Error decrypting Plaid access token:", error);
+        console.error("Error decrypting TrueLayer access token:", error);
         return res.status(500).send({ 
           message: "Failed to access bank connection. Please reconnect your bank account." 
         });
       }
       
-      // Fetch transactions from Plaid (90-120 days)
-      const days = req.body.days || 90; // Allow customization, default to 90 days
-      let transactions: any[];
-      try {
-        transactions = await fetchTransactions(accessToken, Math.min(Math.max(days, 30), 365)); // Limit between 30-365 days
-        console.log(`[Budget Analysis] Fetched ${transactions.length} transactions for user ${userId}`);
-      } catch (error: any) {
-        console.error("Error fetching transactions from Plaid:", error);
-        return res.status(500).send({ 
-          message: "Failed to fetch transactions from your bank. Please try again later." 
-        });
-      }
+      // TODO: Implement TrueLayer transaction fetching
+      // The TrueLayer service will be implemented in the next step
+      // For now, return a stub response indicating this feature is pending implementation
+      console.log(`[Budget Analysis] TrueLayer integration pending for user ${userId}`);
       
-      if (!transactions || transactions.length === 0) {
-        return res.status(404).send({ 
-          message: "No transactions found in the specified period. Please check your bank account has transaction history." 
-        });
-      }
-      
-      // Transform Plaid transactions to our simplified format for Claude
-      const transactionData: TransactionData[] = transactions.map(t => ({
-        name: t.name,
-        amount: t.amount, // Plaid format: positive = money out, negative = money in
-        date: t.date,
-        category: t.category,
-        merchant_name: t.merchant_name,
-        payment_channel: t.payment_channel
-      }));
-      
-      // Analyze transactions with Claude
-      let claudeAnalysis;
-      try {
-        claudeAnalysis = await analyzeTransactionsWithClaude(transactionData);
-        console.log(`[Budget Analysis] Claude analysis completed for user ${userId}`);
-      } catch (error: any) {
-        console.error("Error analyzing transactions with Claude:", error);
-        return res.status(500).send({ 
-          message: "Failed to analyze transactions. Please try again later." 
-        });
-      }
-      
-      // Calculate final budget figures (Two-Brain doctrine: backend does the math)
-      const budgetAnalysis = calculateBudgetFromAnalysis(claudeAnalysis, days);
-      
-      // Log the results for debugging
-      console.log(`[Budget Analysis] Results for user ${userId}:`, {
-        incomePerMonth: budgetAnalysis.identified_monthly_net_income_cents / 100,
-        essentialExpenses: budgetAnalysis.identified_essential_expenses_total_cents / 100,
-        currentBudget: budgetAnalysis.current_budget_cents / 100,
-        potentialBudget: budgetAnalysis.potential_budget_cents / 100,
-        subscriptionCount: budgetAnalysis.non_essential_subscriptions.length,
-        discretionaryCategories: budgetAnalysis.non_essential_discretionary_categories.length
-      });
-      
-      // Update Plaid item's last synced timestamp
-      await storage.updatePlaidItem(plaidItem.id, {
-        lastSyncedAt: new Date()
-      });
-      
-      // Return the analysis (raw transaction data is NOT stored, per security requirements)
-      res.json({
-        success: true,
-        analysis: budgetAnalysis,
-        message: "Transaction analysis completed successfully"
+      return res.status(501).send({
+        message: "TrueLayer transaction fetching is not yet implemented. Please use the /api/budget/analyze endpoint with persona data for testing."
       });
       
     } catch (error: any) {

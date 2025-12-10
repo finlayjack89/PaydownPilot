@@ -1,12 +1,12 @@
 import { 
-  users, accounts, budgets, preferences, plans, lenderRules, plaidItems, debtBuckets,
+  users, accounts, budgets, preferences, plans, lenderRules, trueLayerItems, debtBuckets,
   type User, type InsertUser, 
   type Account, type InsertAccount,
   type Budget, type InsertBudget,
   type Preference, type InsertPreference,
   type Plan, type InsertPlan,
   type LenderRule, type InsertLenderRule,
-  type PlaidItem, type InsertPlaidItem,
+  type TrueLayerItem, type InsertTrueLayerItem,
   type DebtBucket, type InsertDebtBucket,
   type AccountWithBuckets
 } from "@shared/schema";
@@ -58,10 +58,11 @@ export interface IStorage {
   getLenderRule(lenderName: string, country: string): Promise<LenderRule | undefined>;
   createLenderRule(rule: InsertLenderRule): Promise<LenderRule>;
   
-  // Plaid Item methods
-  getPlaidItemByUserId(userId: string): Promise<PlaidItem | undefined>;
-  createPlaidItem(item: InsertPlaidItem): Promise<PlaidItem>;
-  updatePlaidItem(id: string, updates: Partial<PlaidItem>): Promise<PlaidItem | undefined>;
+  // TrueLayer Item methods
+  getTrueLayerItemByUserId(userId: string): Promise<TrueLayerItem | undefined>;
+  createTrueLayerItem(item: InsertTrueLayerItem): Promise<TrueLayerItem>;
+  updateTrueLayerItem(id: string, updates: Partial<TrueLayerItem>): Promise<TrueLayerItem | undefined>;
+  deleteTrueLayerItem(userId: string): Promise<void>;
 }
 
 type BucketInput = Omit<InsertDebtBucket, 'accountId'>;
@@ -255,20 +256,24 @@ export class DatabaseStorage implements IStorage {
     return newRule;
   }
   
-  // Plaid Item methods
-  async getPlaidItemByUserId(userId: string): Promise<PlaidItem | undefined> {
-    const [item] = await db.select().from(plaidItems).where(eq(plaidItems.userId, userId));
+  // TrueLayer Item methods
+  async getTrueLayerItemByUserId(userId: string): Promise<TrueLayerItem | undefined> {
+    const [item] = await db.select().from(trueLayerItems).where(eq(trueLayerItems.userId, userId));
     return item || undefined;
   }
   
-  async createPlaidItem(item: InsertPlaidItem): Promise<PlaidItem> {
-    const [newItem] = await db.insert(plaidItems).values(item).returning();
+  async createTrueLayerItem(item: InsertTrueLayerItem): Promise<TrueLayerItem> {
+    const [newItem] = await db.insert(trueLayerItems).values(item).returning();
     return newItem;
   }
   
-  async updatePlaidItem(id: string, updates: Partial<PlaidItem>): Promise<PlaidItem | undefined> {
-    const [item] = await db.update(plaidItems).set(updates).where(eq(plaidItems.id, id)).returning();
+  async updateTrueLayerItem(id: string, updates: Partial<TrueLayerItem>): Promise<TrueLayerItem | undefined> {
+    const [item] = await db.update(trueLayerItems).set(updates).where(eq(trueLayerItems.id, id)).returning();
     return item || undefined;
+  }
+
+  async deleteTrueLayerItem(userId: string): Promise<void> {
+    await db.delete(trueLayerItems).where(eq(trueLayerItems.userId, userId));
   }
 }
 
@@ -574,25 +579,32 @@ class GuestStorageWrapper implements IStorage {
     return this.dbStorage.createLenderRule(rule);
   }
   
-  // Plaid Items - pass through to database (not guest specific)
-  async getPlaidItemByUserId(userId: string): Promise<PlaidItem | undefined> {
-    // Guest users don't have Plaid items
+  // TrueLayer Items - pass through to database (not guest specific)
+  async getTrueLayerItemByUserId(userId: string): Promise<TrueLayerItem | undefined> {
+    // Guest users don't have TrueLayer items
     if (this.isGuest(userId)) {
       return undefined;
     }
-    return this.dbStorage.getPlaidItemByUserId(userId);
+    return this.dbStorage.getTrueLayerItemByUserId(userId);
   }
   
-  async createPlaidItem(item: InsertPlaidItem): Promise<PlaidItem> {
-    // Guest users can't create Plaid items
+  async createTrueLayerItem(item: InsertTrueLayerItem): Promise<TrueLayerItem> {
+    // Guest users can't create TrueLayer items
     if (this.isGuest(item.userId)) {
       throw new Error("Guest users cannot connect bank accounts");
     }
-    return this.dbStorage.createPlaidItem(item);
+    return this.dbStorage.createTrueLayerItem(item);
   }
   
-  async updatePlaidItem(id: string, updates: Partial<PlaidItem>): Promise<PlaidItem | undefined> {
-    return this.dbStorage.updatePlaidItem(id, updates);
+  async updateTrueLayerItem(id: string, updates: Partial<TrueLayerItem>): Promise<TrueLayerItem | undefined> {
+    return this.dbStorage.updateTrueLayerItem(id, updates);
+  }
+
+  async deleteTrueLayerItem(userId: string): Promise<void> {
+    if (this.isGuest(userId)) {
+      return;
+    }
+    return this.dbStorage.deleteTrueLayerItem(userId);
   }
 }
 

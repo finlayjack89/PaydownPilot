@@ -122,11 +122,14 @@ export const lenderRules = pgTable("lender_rules", {
   lenderCountryUnique: unique().on(table.lenderName, table.country),
 }));
 
-export const plaidItems = pgTable("plaid_items", {
+// TrueLayer Integration Tables
+export const trueLayerItems = pgTable("truelayer_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  itemId: text("item_id").notNull().unique(),
   accessTokenEncrypted: text("access_token_encrypted").notNull(),
+  refreshTokenEncrypted: text("refresh_token_encrypted"),
+  consentExpiresAt: timestamp("consent_expires_at"),
+  provider: text("provider"),
   lastSyncedAt: timestamp("last_synced_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -153,8 +156,8 @@ export type InsertPlan = typeof plans.$inferInsert;
 export type LenderRule = typeof lenderRules.$inferSelect;
 export type InsertLenderRule = typeof lenderRules.$inferInsert;
 
-export type PlaidItem = typeof plaidItems.$inferSelect;
-export type InsertPlaidItem = typeof plaidItems.$inferInsert;
+export type TrueLayerItem = typeof trueLayerItems.$inferSelect;
+export type InsertTrueLayerItem = typeof trueLayerItems.$inferInsert;
 
 // API Request/Response Types
 export interface MinPaymentRule {
@@ -260,24 +263,12 @@ export interface LenderRuleDiscoveryResponse {
   confidence: "high" | "medium" | "low";
 }
 
-export interface PlaidAccount {
-  accountId: string;
-  name: string;
-  balanceCents: number;
-  dueDay?: number;
-  apr?: number;
-}
-
-export interface PlaidLinkTokenResponse {
-  linkToken: string;
-}
-
-export interface PlaidExchangeRequest {
-  publicToken: string;
-}
-
-export interface PlaidExchangeResponse {
-  accounts: PlaidAccount[];
+export interface TrueLayerAccount {
+  account_id: string;
+  account_type: string;
+  display_name: string;
+  currency: string;
+  balance?: number;
 }
 
 // Zod Schemas for Validation
@@ -407,7 +398,9 @@ export interface TrueLayerTransaction {
 
 export interface TrueLayerDirectDebit {
   name: string;
-  amount: number; // Monthly amount
+  amount: number;
+  status?: string;
+  previous_payment_date?: string;
 }
 
 export interface TrueLayerStandingOrder {

@@ -11,7 +11,6 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { buildStructuredPlan } from "./plan-transformer";
-import { registerPlaidRoutes } from "./routes/plaid";
 import { registerLenderRuleRoutes } from "./routes/lender-rules";
 import { registerBudgetAnalysisRoutes } from "./routes/budget-analysis";
 
@@ -103,7 +102,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
   
   // Register modular routes
-  registerPlaidRoutes(app);
   registerLenderRuleRoutes(app);
   registerBudgetAnalysisRoutes(app);
 
