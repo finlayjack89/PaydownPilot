@@ -14,11 +14,11 @@ Preferred communication style: Simple, everyday language.
 - **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, dashboard with ECharts visualizations, Payment Calendar with interactive event highlighting.
 
 ### Recent Updates (December 2024)
+- **Confirm and Save Plan**: Plans are now temporary until confirmed. The delete button has been replaced with a "Confirm and Save Plan" button. If users exit without confirming, their plan is automatically deleted. After confirmation, the button shows "Plan Saved!" and becomes disabled.
 - **Statement Guidance AI Assistant**: New AI-powered assistant helps users find their balance bucket breakdown on their bank statements. Accessible from Step 3 (Bucket Builder) of the Statement Wizard via "Help me find this on my statement" button. Uses Claude Sonnet 4.5 to provide bank-specific guidance based on UK credit card statement standards.
 - **Comprehensive E2E Testing**: Full end-to-end testing completed with 15 diverse test personas covering the complete user journey.
 - **AI Model Fix**: Updated Anthropic model names to Replit AI Integrations compatible format (`claude-sonnet-4-5`, `claude-haiku-4-5`).
 - **AI Chat Improvements**: ChatGPT-style conversation history with user/assistant message bubbles; uses Claude Haiku for fast responses.
-- **Delete Plan Button**: Users can delete generated plans with confirmation dialog.
 - **Refresh Dashboard Button**: Manual refresh to fetch latest account and plan data.
 - **Account Bucket Breakdown**: Detailed view of credit card balance segments (buckets) showing individual APRs, promo periods, and balances.
 - **Plan Generation UX**: Smooth animated progress bar with percentage display; rotating finance tips with fade animation during generation.
