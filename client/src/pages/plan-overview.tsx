@@ -5,7 +5,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2, Trash2, Bot, User } from "lucide-react";
+import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2, Check, Bot, User } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
@@ -17,7 +17,6 @@ import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ChatMessage {
@@ -153,23 +152,24 @@ export default function Dashboard() {
     },
   });
 
-  // Delete plan mutation
-  const deletePlanMutation = useMutation({
+  // Confirm plan mutation
+  const confirmPlanMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", `/api/plans/${plan?.id}/delete`);
+      if (!plan?.id) throw new Error("No plan to confirm");
+      return await apiRequest("POST", `/api/plans/${plan.id}/confirm`, {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/plans"] });
       toast({
-        title: "Plan deleted",
-        description: "Your plan has been deleted. Your accounts remain unchanged.",
+        title: "Plan Saved!",
+        description: "Your payment plan has been confirmed and saved.",
       });
-      setLocation("/accounts");
     },
     onError: (error: any) => {
       toast({
-        title: "Delete failed",
-        description: error.message || "Could not delete the plan.",
+        title: "Confirmation failed",
+        description: error.message || "Could not confirm plan.",
         variant: "destructive",
       });
     },
@@ -288,33 +288,36 @@ export default function Dashboard() {
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" data-testid="button-delete-plan">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete Plan
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this plan?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will remove your current payment plan. Your accounts and budget settings will remain unchanged.
-                    You can generate a new plan at any time.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => deletePlanMutation.mutate()}
-                    disabled={deletePlanMutation.isPending}
-                    data-testid="button-confirm-delete"
-                  >
-                    {deletePlanMutation.isPending ? "Deleting..." : "Delete Plan"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {plan?.confirmed ? (
+              <Button
+                variant="outline"
+                disabled
+                data-testid="button-confirm-plan"
+              >
+                <Check className="mr-2 h-4 w-4" />
+                Plan Saved
+              </Button>
+            ) : (
+              <Button
+                variant="default"
+                onClick={() => confirmPlanMutation.mutate()}
+                disabled={confirmPlanMutation.isPending}
+                data-testid="button-confirm-plan"
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                {confirmPlanMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check className="mr-2 h-4 w-4" />
+                    Confirm and Save Plan
+                  </>
+                )}
+              </Button>
+            )}
             <ThemeToggle />
           </div>
         </div>

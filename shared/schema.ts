@@ -105,6 +105,7 @@ export const plans = pgTable("plans", {
   message: text("message"),
   planData: jsonb("plan_data").$type<Array<MonthlyResult>>(),
   explanation: text("explanation"),
+  confirmed: boolean("confirmed").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

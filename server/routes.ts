@@ -169,13 +169,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     })(req, res, next);
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) {
-        return res.status(500).send({ message: "Logout failed" });
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      if (userId) {
+        await storage.deleteUnconfirmedPlans(userId);
       }
-      res.json({ message: "Logged out successfully" });
-    });
+      req.logout((err) => {
+        if (err) {
+          return res.status(500).send({ message: "Logout failed" });
+        }
+        res.json({ message: "Logged out successfully" });
+      });
+    } catch (error: any) {
+      req.logout((err) => {
+        if (err) {
+          return res.status(500).send({ message: "Logout failed" });
+        }
+        res.json({ message: "Logged out successfully" });
+      });
+    }
   });
 
   app.post("/api/auth/guest", (req, res, next) => {
@@ -982,6 +995,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Plan is current", deleted: false });
     } catch (error: any) {
       res.status(500).send({ message: error.message || "Failed to validate plan" });
+    }
+  });
+
+  app.post("/api/plans/:id/confirm", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const planId = req.params.id;
+      
+      const plans = await storage.getPlansByUserId(userId);
+      const plan = plans.find(p => p.id === planId);
+      
+      if (!plan) {
+        return res.status(404).send({ message: "Plan not found" });
+      }
+
+      const confirmedPlan = await storage.confirmPlan(planId);
+      
+      res.json({ message: "Plan confirmed and saved!", plan: confirmedPlan });
+    } catch (error: any) {
+      res.status(500).send({ message: error.message || "Failed to confirm plan" });
     }
   });
 

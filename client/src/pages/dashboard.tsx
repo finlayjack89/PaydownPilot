@@ -5,7 +5,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { TrendingDown, Calendar, DollarSign, Target, Settings, CreditCard, LayoutGrid, LayoutList, Wallet, Send, Loader2, RefreshCw, Check } from "lucide-react";
 import { formatCurrency, formatMonthYear } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
@@ -173,25 +173,24 @@ export default function Dashboard() {
     },
   });
 
-  // Delete plan mutation
-  const deletePlanMutation = useMutation({
+  // Confirm plan mutation
+  const confirmPlanMutation = useMutation({
     mutationFn: async () => {
-      if (!plan?.id) throw new Error("No plan to delete");
-      return await apiRequest("POST", `/api/plans/${plan.id}/delete`, {});
+      if (!plan?.id) throw new Error("No plan to confirm");
+      return await apiRequest("POST", `/api/plans/${plan.id}/confirm`, {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/plans/latest"] });
       queryClient.invalidateQueries({ queryKey: ["/api/plans"] });
       toast({
-        title: "Plan deleted",
-        description: "Your payment plan has been deleted. Your account balances remain unchanged.",
+        title: "Plan Saved!",
+        description: "Your payment plan has been confirmed and saved.",
       });
-      setLocation("/accounts");
     },
     onError: (error: any) => {
       toast({
-        title: "Delete failed",
-        description: error.message || "Could not delete plan.",
+        title: "Confirmation failed",
+        description: error.message || "Could not confirm plan.",
         variant: "destructive",
       });
     },
@@ -332,19 +331,35 @@ export default function Dashboard() {
               Optimized to {plan.status === "OPTIMAL" ? "minimize your total interest" : "work within your constraints"}
             </p>
           </div>
-          <Button
-            className="glass-button-destructive"
-            onClick={() => {
-              if (confirm("Are you sure you want to delete this plan? Your accounts and balances will not be affected. You can generate a new plan anytime.")) {
-                deletePlanMutation.mutate();
-              }
-            }}
-            disabled={deletePlanMutation.isPending}
-            data-testid="button-delete-plan"
-          >
-            <Trash2 className={`mr-2 h-4 w-4 ${deletePlanMutation.isPending ? "animate-spin" : ""}`} />
-            {deletePlanMutation.isPending ? "Deleting..." : "Delete Plan"}
-          </Button>
+          {plan?.confirmed ? (
+            <Button
+              className="glass-button-success"
+              disabled
+              data-testid="button-confirm-plan"
+            >
+              <Check className="mr-2 h-4 w-4" />
+              Plan Saved
+            </Button>
+          ) : (
+            <Button
+              className="glass-button-success"
+              onClick={() => confirmPlanMutation.mutate()}
+              disabled={confirmPlanMutation.isPending}
+              data-testid="button-confirm-plan"
+            >
+              {confirmPlanMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Confirm and Save Plan
+                </>
+              )}
+            </Button>
+          )}
         </div>
 
         {/* Summary Cards - Glass Effect */}

@@ -51,6 +51,8 @@ export interface IStorage {
   getLatestPlan(userId: string): Promise<Plan | undefined>;
   createPlan(plan: InsertPlan): Promise<Plan>;
   deletePlan(id: string): Promise<void>;
+  confirmPlan(id: string): Promise<Plan | undefined>;
+  deleteUnconfirmedPlans(userId: string): Promise<void>;
 
   // Lender Rules methods
   getLenderRule(lenderName: string, country: string): Promise<LenderRule | undefined>;
@@ -229,6 +231,15 @@ export class DatabaseStorage implements IStorage {
 
   async deletePlan(id: string): Promise<void> {
     await db.delete(plans).where(eq(plans.id, id));
+  }
+
+  async confirmPlan(id: string): Promise<Plan | undefined> {
+    const [plan] = await db.update(plans).set({ confirmed: true }).where(eq(plans.id, id)).returning();
+    return plan || undefined;
+  }
+
+  async deleteUnconfirmedPlans(userId: string): Promise<void> {
+    await db.delete(plans).where(and(eq(plans.userId, userId), eq(plans.confirmed, false)));
   }
 
   // Lender Rules methods
@@ -535,6 +546,23 @@ class GuestStorageWrapper implements IStorage {
       return;
     }
     return this.dbStorage.deletePlan(id);
+  }
+
+  async confirmPlan(id: string): Promise<Plan | undefined> {
+    const guestIdx = this.guestData.plans.findIndex(p => p.id === id);
+    if (guestIdx !== -1) {
+      this.guestData.plans[guestIdx] = { ...this.guestData.plans[guestIdx], confirmed: true };
+      return this.guestData.plans[guestIdx];
+    }
+    return this.dbStorage.confirmPlan(id);
+  }
+
+  async deleteUnconfirmedPlans(userId: string): Promise<void> {
+    if (this.isGuest(userId)) {
+      this.guestData.plans = this.guestData.plans.filter(p => p.confirmed);
+      return;
+    }
+    return this.dbStorage.deleteUnconfirmedPlans(userId);
   }
 
   // Lender Rules - pass through to database (shared)

@@ -15,6 +15,13 @@
       "when": 1764529759891,
       "tag": "0001_magenta_ser_duncan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1765400000000,
+      "tag": "0002_add_plan_confirmed",
+      "breakpoints": true
     }
   ]
 }
