@@ -32,6 +32,12 @@ export enum PaymentShape {
   OPTIMIZED_MONTH_TO_MONTH = "Optimized (Variable Amounts)"
 }
 
+export enum MembershipFeeFrequency {
+  NONE = "none",
+  MONTHLY = "monthly",
+  ANNUAL = "annual"
+}
+
 // Database Tables
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -50,6 +56,7 @@ export const accounts = pgTable("accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   lenderName: text("lender_name").notNull(),
+  productName: text("product_name"),
   accountType: text("account_type").notNull(),
   currency: text("currency").default("USD"),
   currentBalanceCents: integer("current_balance_cents").notNull(),
@@ -58,6 +65,8 @@ export const accounts = pgTable("accounts", {
   minPaymentRuleFixedCents: integer("min_payment_rule_fixed_cents").default(0),
   minPaymentRulePercentageBps: integer("min_payment_rule_percentage_bps").default(0),
   minPaymentRuleIncludesInterest: boolean("min_payment_rule_includes_interest").default(false),
+  membershipFeeCents: integer("membership_fee_cents").default(0),
+  membershipFeeFrequency: text("membership_fee_frequency").default("none"),
   isManualEntry: boolean("is_manual_entry").default(true),
   promoEndDate: date("promo_end_date"),
   promoDurationMonths: integer("promo_duration_months"),
@@ -122,6 +131,27 @@ export const lenderRules = pgTable("lender_rules", {
   lenderCountryUnique: unique().on(table.lenderName, table.country),
 }));
 
+export const lenderProducts = pgTable("lender_products", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  lenderName: text("lender_name").notNull(),
+  productName: text("product_name").notNull(),
+  country: text("country").notNull().default("UK"),
+  purchaseAprBps: integer("purchase_apr_bps"),
+  balanceTransferAprBps: integer("balance_transfer_apr_bps"),
+  cashAdvanceAprBps: integer("cash_advance_apr_bps"),
+  minPaymentFixedCents: integer("min_payment_fixed_cents").default(0),
+  minPaymentPercentageBps: integer("min_payment_percentage_bps").default(0),
+  minPaymentIncludesInterest: boolean("min_payment_includes_interest").default(false),
+  membershipFeeCents: integer("membership_fee_cents").default(0),
+  membershipFeeFrequency: text("membership_fee_frequency").default("none"),
+  ruleDescription: text("rule_description"),
+  sourceUrl: text("source_url"),
+  verifiedAt: timestamp("verified_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  lenderProductCountryUnique: unique().on(table.lenderName, table.productName, table.country),
+}));
+
 // TrueLayer Integration Tables
 export const trueLayerItems = pgTable("truelayer_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -156,6 +186,9 @@ export type InsertPlan = typeof plans.$inferInsert;
 export type LenderRule = typeof lenderRules.$inferSelect;
 export type InsertLenderRule = typeof lenderRules.$inferInsert;
 
+export type LenderProduct = typeof lenderProducts.$inferSelect;
+export type InsertLenderProduct = typeof lenderProducts.$inferInsert;
+
 export type TrueLayerItem = typeof trueLayerItems.$inferSelect;
 export type InsertTrueLayerItem = typeof trueLayerItems.$inferInsert;
 
@@ -185,12 +218,15 @@ export interface BucketRequest {
 
 export interface AccountRequest {
   lenderName: string;
+  productName?: string;
   accountType: AccountType;
   currency?: string;
   currentBalanceCents: number;
   aprStandardBps: number;
   paymentDueDay: number;
   minPaymentRule: MinPaymentRule;
+  membershipFeeCents?: number;
+  membershipFeeFrequency?: MembershipFeeFrequency;
   promoEndDate?: string;
   promoDurationMonths?: number;
   accountOpenDate?: string;
