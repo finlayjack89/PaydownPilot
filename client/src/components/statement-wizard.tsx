@@ -233,15 +233,24 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
 
   const discoverRuleMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/lender-rules/discover", {
+      const response = await apiRequest("POST", "/api/lender-rules/discover", {
         lenderName,
         country: user?.country || "UK",
       });
+      // apiRequest returns a Response object, so we need to parse JSON
+      return await response.json();
     },
-    onSuccess: (data: any) => {
-      const ruleData = data as LenderRuleDiscoveryResponse;
-      setDiscoveredRule(ruleData);
-      setShowAiMinPaymentDialog(true);
+    onSuccess: (data: LenderRuleDiscoveryResponse) => {
+      if (data.minPaymentRule) {
+        setDiscoveredRule(data);
+        setShowAiMinPaymentDialog(true);
+      } else {
+        toast({
+          title: "No rule found",
+          description: "Could not find minimum payment rules for this lender. Please enter them manually.",
+          variant: "destructive",
+        });
+      }
     },
     onError: () => {
       toast({
