@@ -12,6 +12,7 @@ import {
 import { randomUUID } from "crypto";
 import { buildStructuredPlan } from "./plan-transformer";
 import { registerLenderRuleRoutes } from "./routes/lender-rules";
+import { registerLenderProductRoutes } from "./routes/lender-products";
 import { registerBudgetAnalysisRoutes } from "./routes/budget-analysis";
 import { registerTrueLayerRoutes } from "./routes/truelayer";
 
@@ -104,6 +105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Register modular routes
   registerLenderRuleRoutes(app);
+  registerLenderProductRoutes(app);
   registerBudgetAnalysisRoutes(app);
   registerTrueLayerRoutes(app);
 
