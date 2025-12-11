@@ -6,18 +6,21 @@ const TRUELAYER_CLIENT_SECRET = process.env.TRUELAYER_CLIENT_SECRET;
 // Environment detection for sandbox vs production
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-// TrueLayer endpoints - use sandbox for development, production for live
-const AUTH_URL = IS_PRODUCTION 
-  ? "https://auth.truelayer.com" 
-  : "https://auth.truelayer-sandbox.com";
-const API_URL = IS_PRODUCTION 
-  ? "https://api.truelayer.com" 
-  : "https://api.truelayer-sandbox.com";
+// Force sandbox mode for testing with Mock Bank
+// TODO: Set USE_TRUELAYER_SANDBOX=false when ready to go live with real banks
+const USE_SANDBOX = process.env.USE_TRUELAYER_SANDBOX !== "false";
 
-// Provider selection - use mock bank for sandbox testing, real UK banks for production
-const PROVIDERS = IS_PRODUCTION 
-  ? "uk-ob-all uk-oauth-all" 
-  : "uk-ob-mock";
+// TrueLayer endpoints - using sandbox for Mock Bank testing
+const AUTH_URL = USE_SANDBOX 
+  ? "https://auth.truelayer-sandbox.com" 
+  : "https://auth.truelayer.com";
+const API_URL = USE_SANDBOX 
+  ? "https://api.truelayer-sandbox.com" 
+  : "https://api.truelayer.com";
+
+// Provider selection - using mock bank for testing
+// TODO: Switch to "uk-ob-all uk-oauth-all" for production when ready to go live
+const PROVIDERS = USE_SANDBOX ? "uk-ob-mock" : "uk-ob-all uk-oauth-all";
 
 export interface TrueLayerTokenResponse {
   access_token: string;
@@ -105,7 +108,7 @@ export function generateAuthUrl(redirectUri: string, state?: string): string {
     params.append("state", state);
   }
 
-  console.log(`[TrueLayer] Generating auth URL with providers: ${PROVIDERS}, environment: ${IS_PRODUCTION ? 'production' : 'sandbox'}`);
+  console.log(`[TrueLayer] Generating auth URL with providers: ${PROVIDERS}, mode: ${USE_SANDBOX ? 'sandbox' : 'live'}`);
   
   return `${AUTH_URL}/?${params.toString()}`;
 }
