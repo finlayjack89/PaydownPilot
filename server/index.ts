@@ -2,6 +2,10 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { spawn } from "child_process";
+import { db } from "./db";
+import { lenderProducts } from "@shared/schema";
+import { count } from "drizzle-orm";
+import { seedLenderProductsData } from "./scripts/seed-lender-products-data";
 
 const app = express();
 
@@ -155,7 +159,28 @@ app.use((req, res, next) => {
   next();
 });
 
+// Auto-seed lender products if the table is empty
+async function ensureLenderProductsSeeded() {
+  try {
+    const result = await db.select({ value: count() }).from(lenderProducts);
+    const productCount = result[0]?.value ?? 0;
+    
+    if (productCount === 0) {
+      log("Lender products table is empty. Seeding database...");
+      await seedLenderProductsData();
+      log("Lender products seeded successfully.");
+    } else {
+      log(`Lender products table has ${productCount} products.`);
+    }
+  } catch (error) {
+    console.error("Failed to seed lender products:", error);
+  }
+}
+
 (async () => {
+  // Seed lender products if empty (important for production deployments)
+  await ensureLenderProductsSeeded();
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
