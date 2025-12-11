@@ -14,6 +14,8 @@ Preferred communication style: Simple, everyday language.
 - **Key Features**: Authentication, multi-step onboarding, account management (CRUD), budget configuration (including future changes and lump sums), preference selection (optimization strategy, payment shape), plan generation, dashboard with ECharts visualizations, Payment Calendar with interactive event highlighting.
 
 ### Recent Updates (December 2024)
+- **UK Lender Products Database**: Comprehensive database of 73 UK credit card products from 28 major lenders (American Express, Barclays, HSBC, Lloyds, etc.). Features cascading dropdown UI in Statement Wizard: select lender → select product → confirmation dialog shows APR, minimum payment rules, and membership fees → auto-populates form fields. Uses `lender_products` table with proper data precision (cents for fees, basis points for APRs). Query pattern uses custom queryFn with URL-encoded parameters: `/api/lender-products?lender=${encodeURIComponent(lenderName)}`.
+- **Membership Fee Tracking**: Accounts now store membership fee data (`membershipFeeCents`, `membershipFeeFrequency`) for solver calculations. Annual fees automatically converted to monthly (÷12) for optimization. Frequencies: 'none', 'annual', 'monthly'.
 - **Minimum Payment Rule Confirmation Dialog**: AI-discovered minimum payment rules now require explicit user confirmation before auto-populating form fields. Nested Radix Dialog pattern ensures proper UX flow. Users can accept or reject discovered rules. **Technical Note**: The `discoverRuleMutation` in statement-wizard.tsx must parse the Response object with `.json()` before accessing rule data.
 - **Full-Width Layout Fix**: SidebarProvider moved inside AppLayout component to prevent sidebar space reservation on full-width pages (onboarding, login, signup). This ensures these pages span the entire viewport width.
 - **TrueLayer Integration**: Replaced Plaid with TrueLayer for UK Open Banking. New OAuth2 flow, encrypted token storage, transaction fetching via TrueLayer Data API. Budget analysis uses deterministic categorization from transaction data.
@@ -42,7 +44,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Storage
 - **Database**: PostgreSQL (Neon serverless) with WebSocket support, Drizzle ORM.
-- **Schema Design**: `users`, `accounts`, `debt_buckets`, `budgets`, `preferences`, `plans`, `lenderRules`, `trueLayerItems`.
+- **Schema Design**: `users`, `accounts`, `debt_buckets`, `budgets`, `preferences`, `plans`, `lenderRules`, `lenderProducts`, `trueLayerItems`.
 - **Key Data Patterns**: Monetary values in cents (integers), percentages in basis points (bps), JSONB for nested data, cascade deletes, encrypted sensitive data (TrueLayer tokens).
 - **Security**: TrueLayer access/refresh tokens encrypted with AES-256-GCM using ENCRYPTION_SECRET environment variable.
 
