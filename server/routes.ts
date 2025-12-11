@@ -343,6 +343,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           minPaymentRuleFixedCents: validatedData.minPaymentRuleFixedCents,
           minPaymentRulePercentageBps: validatedData.minPaymentRulePercentageBps,
           minPaymentRuleIncludesInterest: validatedData.minPaymentRuleIncludesInterest,
+          membershipFeeCents: validatedData.membershipFeeCents || 0,
+          membershipFeeFrequency: validatedData.membershipFeeFrequency || "none",
           isManualEntry: validatedData.isManualEntry,
           promoEndDate: validatedData.promoEndDate || null,
           promoDurationMonths: validatedData.promoDurationMonths || null,

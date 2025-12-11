@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,10 +9,10 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Sparkles, Plus, Trash2, ArrowLeft, ArrowRight, CreditCard, Layers, CircleDot, ChevronRight, HelpCircle } from "lucide-react";
+import { Loader2, Sparkles, Plus, Trash2, ArrowLeft, ArrowRight, CreditCard, Layers, CircleDot, ChevronRight, HelpCircle, Check } from "lucide-react";
 import { StatementGuidanceButton } from "./statement-guidance-assistant";
-import { AccountType, BucketType } from "@shared/schema";
-import type { Account, LenderRuleDiscoveryResponse, DebtBucket } from "@shared/schema";
+import { AccountType, BucketType, MembershipFeeFrequency } from "@shared/schema";
+import type { Account, LenderRuleDiscoveryResponse, DebtBucket, LenderProduct } from "@shared/schema";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -172,10 +172,16 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
   
   // Step 1: Headline data
   const [lenderName, setLenderName] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [selectedProduct, setSelectedProduct] = useState<LenderProduct | null>(null);
   const [currency, setCurrency] = useState("GBP");
   const [totalBalance, setTotalBalance] = useState("");
   const [dueDay, setDueDay] = useState("");
   const [standardApr, setStandardApr] = useState("");
+  
+  // Membership fee fields
+  const [membershipFeeCents, setMembershipFeeCents] = useState(0);
+  const [membershipFeeFrequency, setMembershipFeeFrequency] = useState<string>("none");
   
   // Min payment rule (discovered or manual)
   const [fixedAmount, setFixedAmount] = useState("");
@@ -183,9 +189,11 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
   const [includesInterest, setIncludesInterest] = useState(false);
   const [notes, setNotes] = useState("");
   
-  // AI discovery state
+  // AI discovery state - now used for product confirmation
   const [discoveredRule, setDiscoveredRule] = useState<LenderRuleDiscoveryResponse | null>(null);
   const [showAiMinPaymentDialog, setShowAiMinPaymentDialog] = useState(false);
+  const [showProductConfirmDialog, setShowProductConfirmDialog] = useState(false);
+  const [pendingProduct, setPendingProduct] = useState<LenderProduct | null>(null);
 
   // Step 2: Split decision
   const [splitMode, setSplitMode] = useState<"single" | "multiple" | null>(null);
@@ -194,6 +202,24 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
   const [buckets, setBuckets] = useState<BucketFormData[]>([]);
 
   const generateBucketId = () => `bucket-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  // Fetch lenders list
+  const { data: lenders = [], isLoading: isLoadingLenders } = useQuery<string[]>({
+    queryKey: ["/api/lender-products/lenders"],
+  });
+
+  // Fetch products for selected lender
+  const { data: products = [], isLoading: isLoadingProducts } = useQuery<LenderProduct[]>({
+    queryKey: ["/api/lender-products", lenderName],
+    queryFn: async () => {
+      const res = await fetch(`/api/lender-products?lender=${encodeURIComponent(lenderName)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch products");
+      return res.json();
+    },
+    enabled: !!lenderName,
+  });
 
   useEffect(() => {
     if (account) {
@@ -218,10 +244,14 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
   const resetForm = () => {
     setStep(1);
     setLenderName("");
+    setSelectedProductId("");
+    setSelectedProduct(null);
     setCurrency("GBP");
     setTotalBalance("");
     setDueDay("");
     setStandardApr("");
+    setMembershipFeeCents(0);
+    setMembershipFeeFrequency("none");
     setNotes("");
     setFixedAmount("");
     setPercentage("");
@@ -229,6 +259,57 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
     setDiscoveredRule(null);
     setSplitMode(null);
     setBuckets([]);
+    setPendingProduct(null);
+    setShowProductConfirmDialog(false);
+  };
+
+  // Handle product selection - show confirmation dialog
+  const handleProductSelect = (productId: string) => {
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      setPendingProduct(product);
+      setShowProductConfirmDialog(true);
+    }
+  };
+
+  // Apply confirmed product data
+  const applyProductData = () => {
+    if (!pendingProduct) return;
+    
+    setSelectedProductId(pendingProduct.id);
+    setSelectedProduct(pendingProduct);
+    
+    // Auto-populate APR
+    if (pendingProduct.purchaseAprBps) {
+      setStandardApr((pendingProduct.purchaseAprBps / 100).toString());
+    }
+    
+    // Auto-populate minimum payment rule
+    if (pendingProduct.minPaymentFixedCents != null) {
+      setFixedAmount((pendingProduct.minPaymentFixedCents / 100).toString());
+    }
+    if (pendingProduct.minPaymentPercentageBps != null) {
+      setPercentage((pendingProduct.minPaymentPercentageBps / 100).toString());
+    }
+    if (pendingProduct.minPaymentIncludesInterest != null) {
+      setIncludesInterest(pendingProduct.minPaymentIncludesInterest);
+    }
+    
+    // Auto-populate membership fee
+    if (pendingProduct.membershipFeeCents != null) {
+      setMembershipFeeCents(pendingProduct.membershipFeeCents);
+    }
+    if (pendingProduct.membershipFeeFrequency) {
+      setMembershipFeeFrequency(pendingProduct.membershipFeeFrequency);
+    }
+    
+    toast({
+      title: "Product details applied",
+      description: `APR, minimum payment, and membership fee from ${pendingProduct.productName} applied.`,
+    });
+    
+    setShowProductConfirmDialog(false);
+    setPendingProduct(null);
   };
 
   const discoverRuleMutation = useMutation({
@@ -342,6 +423,8 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
       minPaymentRuleFixedCents: parseCurrencyToCents(fixedAmount),
       minPaymentRulePercentageBps: formatBpsInput(percentage),
       minPaymentRuleIncludesInterest: includesInterest,
+      membershipFeeCents: membershipFeeCents || 0,
+      membershipFeeFrequency: membershipFeeFrequency as "none" | "annual" | "monthly",
       promoEndDate: null,
       promoDurationMonths: null,
       notes,
@@ -412,39 +495,61 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
   const renderStep1 = () => (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2 md:col-span-2">
+        <div className="space-y-2">
           <Label htmlFor="lenderName">Credit Card Provider</Label>
-          <div className="flex gap-2">
-            <Input
-              id="lenderName"
-              placeholder="e.g., Barclays, HSBC, Amex"
-              value={lenderName}
-              onChange={(e) => setLenderName(e.target.value)}
-              className="h-12"
-              data-testid="input-lender-name"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => discoverRuleMutation.mutate()}
-              disabled={!lenderName || discoverRuleMutation.isPending}
-              className="h-12 px-4"
-              data-testid="button-discover-rule"
-            >
-              {discoverRuleMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-          {discoveredRule && (
-            <Card className="p-3 bg-primary/5 border-primary/20">
-              <p className="text-sm font-medium flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                AI Found: {discoveredRule.ruleDescription}
-              </p>
-            </Card>
+          <Select 
+            value={lenderName} 
+            onValueChange={(value) => {
+              setLenderName(value);
+              setSelectedProductId("");
+              setSelectedProduct(null);
+            }}
+          >
+            <SelectTrigger className="h-12" data-testid="select-lender">
+              <SelectValue placeholder={isLoadingLenders ? "Loading..." : "Select provider"} />
+            </SelectTrigger>
+            <SelectContent>
+              {lenders.map((lender) => (
+                <SelectItem key={lender} value={lender}>
+                  {lender}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="productName">Credit Card Product</Label>
+          <Select 
+            value={selectedProductId} 
+            onValueChange={handleProductSelect}
+            disabled={!lenderName || isLoadingProducts}
+          >
+            <SelectTrigger className="h-12" data-testid="select-product">
+              <SelectValue placeholder={
+                !lenderName ? "Select provider first" : 
+                isLoadingProducts ? "Loading products..." : 
+                "Select product"
+              } />
+            </SelectTrigger>
+            <SelectContent>
+              {products.map((product) => (
+                <SelectItem key={product.id} value={product.id}>
+                  {product.productName}
+                  {product.membershipFeeCents && product.membershipFeeCents > 0 && (
+                    <span className="text-muted-foreground ml-2">
+                      (£{(product.membershipFeeCents / 100).toFixed(0)}/yr)
+                    </span>
+                  )}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedProduct && (
+            <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+              <Check className="h-4 w-4" />
+              <span>Details auto-populated from database</span>
+            </div>
           )}
         </div>
 
@@ -558,21 +663,69 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
           Minimum payment is typically the greater of these two amounts
         </p>
         
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full mt-4"
-          onClick={() => discoverRuleMutation.mutate()}
-          disabled={!lenderName || discoverRuleMutation.isPending}
-          data-testid="button-ai-min-payment"
-        >
-          {discoverRuleMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4 mr-2" />
-          )}
-          Calculate my minimum payment with AI
-        </Button>
+        {!selectedProduct && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full mt-4"
+            onClick={() => discoverRuleMutation.mutate()}
+            disabled={!lenderName || discoverRuleMutation.isPending}
+            data-testid="button-ai-min-payment"
+          >
+            {discoverRuleMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
+            Calculate my minimum payment with AI
+          </Button>
+        )}
+      </div>
+
+      <Separator />
+
+      <div className="space-y-4">
+        <Label>Membership Fee (if applicable)</Label>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="membershipFee" className="text-xs text-muted-foreground">Fee Amount</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                {getCurrencySymbol()}
+              </span>
+              <Input
+                id="membershipFee"
+                type="text"
+                placeholder="0.00"
+                value={membershipFeeCents ? (membershipFeeCents / 100).toFixed(2) : ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "" || /^[0-9]*\.?[0-9]*$/.test(val)) {
+                    setMembershipFeeCents(val ? parseCurrencyToCents(val) : 0);
+                  }
+                }}
+                className="h-12 font-mono pl-8"
+                data-testid="input-membership-fee"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="membershipFeeFrequency" className="text-xs text-muted-foreground">Fee Frequency</Label>
+            <Select value={membershipFeeFrequency} onValueChange={setMembershipFeeFrequency}>
+              <SelectTrigger className="h-12" data-testid="select-membership-fee-frequency">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No fee</SelectItem>
+                <SelectItem value="annual">Annual</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Premium cards like Amex Platinum often have annual fees that affect your total cost
+        </p>
       </div>
     </div>
   );
@@ -1068,6 +1221,130 @@ export function StatementWizard({ open, onOpenChange, account }: StatementWizard
                 Apply All
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Product Confirmation Dialog */}
+      <Dialog open={showProductConfirmDialog} onOpenChange={(open) => {
+        if (!open) {
+          setPendingProduct(null);
+        }
+        setShowProductConfirmDialog(open);
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" />
+              Confirm Product Details
+            </DialogTitle>
+            <DialogDescription>
+              Review the auto-populated details for {pendingProduct?.lenderName} {pendingProduct?.productName}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {pendingProduct && (
+            <div className="space-y-4">
+              {/* APR Information */}
+              <Card className="p-4 bg-primary/5 border-primary/20">
+                <p className="text-sm font-medium mb-3">Interest Rates</p>
+                <div className="grid gap-2 text-sm">
+                  {pendingProduct.purchaseAprBps && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Purchase APR:</span>
+                      <span className="font-mono font-medium">
+                        {(pendingProduct.purchaseAprBps / 100).toFixed(2)}%
+                      </span>
+                    </div>
+                  )}
+                  {pendingProduct.balanceTransferAprBps && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Balance Transfer APR:</span>
+                      <span className="font-mono font-medium">
+                        {(pendingProduct.balanceTransferAprBps / 100).toFixed(2)}%
+                      </span>
+                    </div>
+                  )}
+                  {pendingProduct.cashAdvanceAprBps && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Cash Advance APR:</span>
+                      <span className="font-mono font-medium">
+                        {(pendingProduct.cashAdvanceAprBps / 100).toFixed(2)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </Card>
+              
+              {/* Minimum Payment Rule */}
+              {pendingProduct.ruleDescription && (
+                <Card className="p-4 bg-muted/50">
+                  <p className="text-sm font-medium mb-3">Minimum Payment Rule</p>
+                  <p className="text-sm text-muted-foreground mb-2">{pendingProduct.ruleDescription}</p>
+                  <div className="grid gap-2 text-sm">
+                    {(pendingProduct.minPaymentFixedCents ?? 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Fixed minimum:</span>
+                        <span className="font-mono font-medium">
+                          {getCurrencySymbol()}{((pendingProduct.minPaymentFixedCents ?? 0) / 100).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    {(pendingProduct.minPaymentPercentageBps ?? 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Percentage:</span>
+                        <span className="font-mono font-medium">
+                          {((pendingProduct.minPaymentPercentageBps ?? 0) / 100).toFixed(2)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+              
+              {/* Membership Fee */}
+              {pendingProduct.membershipFeeCents != null && pendingProduct.membershipFeeCents > 0 && (
+                <Card className="p-4 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+                  <p className="text-sm font-medium mb-3 text-amber-800 dark:text-amber-300">Membership Fee</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {pendingProduct.membershipFeeFrequency === "annual" ? "Annual fee:" : "Monthly fee:"}
+                    </span>
+                    <span className="font-mono font-medium text-amber-700 dark:text-amber-400">
+                      {getCurrencySymbol()}{(pendingProduct.membershipFeeCents / 100).toFixed(2)}
+                      {pendingProduct.membershipFeeFrequency === "annual" ? "/year" : "/month"}
+                    </span>
+                  </div>
+                </Card>
+              )}
+              
+              {pendingProduct.membershipFeeCents === 0 && (
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <Check className="h-4 w-4" />
+                  <span>No annual or monthly fees</span>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowProductConfirmDialog(false);
+                setPendingProduct(null);
+              }}
+              data-testid="button-cancel-product"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={applyProductData}
+              data-testid="button-confirm-product"
+            >
+              <Check className="h-4 w-4 mr-2" />
+              Confirm & Apply
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

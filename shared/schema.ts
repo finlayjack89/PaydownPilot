@@ -393,6 +393,8 @@ export const accountWithBucketsRequestSchema = z.object({
   minPaymentRuleFixedCents: z.number().int().min(0).default(0),
   minPaymentRulePercentageBps: z.number().int().min(0).default(0),
   minPaymentRuleIncludesInterest: z.boolean().default(false),
+  membershipFeeCents: z.number().int().min(0).default(0),
+  membershipFeeFrequency: z.nativeEnum(MembershipFeeFrequency).default(MembershipFeeFrequency.NONE),
   isManualEntry: z.boolean().default(true),
   promoEndDate: z.string().nullable().optional(),
   promoDurationMonths: z.number().int().nullable().optional(),
