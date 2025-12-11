@@ -3,8 +3,21 @@ import { encryptToken, decryptToken } from "./encryption";
 const TRUELAYER_CLIENT_ID = process.env.TRUELAYER_CLIENT_ID;
 const TRUELAYER_CLIENT_SECRET = process.env.TRUELAYER_CLIENT_SECRET;
 
-const SANDBOX_AUTH_URL = "https://auth.truelayer-sandbox.com";
-const SANDBOX_API_URL = "https://api.truelayer-sandbox.com";
+// Environment detection for sandbox vs production
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+// TrueLayer endpoints - use sandbox for development, production for live
+const AUTH_URL = IS_PRODUCTION 
+  ? "https://auth.truelayer.com" 
+  : "https://auth.truelayer-sandbox.com";
+const API_URL = IS_PRODUCTION 
+  ? "https://api.truelayer.com" 
+  : "https://api.truelayer-sandbox.com";
+
+// Provider selection - use mock bank for sandbox testing, real UK banks for production
+const PROVIDERS = IS_PRODUCTION 
+  ? "uk-ob-all uk-oauth-all" 
+  : "uk-ob-mock";
 
 export interface TrueLayerTokenResponse {
   access_token: string;
@@ -85,14 +98,16 @@ export function generateAuthUrl(redirectUri: string, state?: string): string {
     client_id: TRUELAYER_CLIENT_ID,
     redirect_uri: redirectUri,
     scope: "accounts balance transactions direct_debits offline_access",
-    providers: "uk-ob-all uk-oauth-all",
+    providers: PROVIDERS,
   });
 
   if (state) {
     params.append("state", state);
   }
 
-  return `${SANDBOX_AUTH_URL}/?${params.toString()}`;
+  console.log(`[TrueLayer] Generating auth URL with providers: ${PROVIDERS}, environment: ${IS_PRODUCTION ? 'production' : 'sandbox'}`);
+  
+  return `${AUTH_URL}/?${params.toString()}`;
 }
 
 export async function exchangeCodeForToken(
@@ -103,7 +118,7 @@ export async function exchangeCodeForToken(
     throw new Error("TrueLayer credentials are not configured");
   }
 
-  const response = await fetch(`${SANDBOX_AUTH_URL}/connect/token`, {
+  const response = await fetch(`${AUTH_URL}/connect/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -133,7 +148,7 @@ export async function refreshAccessToken(
     throw new Error("TrueLayer credentials are not configured");
   }
 
-  const response = await fetch(`${SANDBOX_AUTH_URL}/connect/token`, {
+  const response = await fetch(`${AUTH_URL}/connect/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -158,7 +173,7 @@ export async function refreshAccessToken(
 export async function fetchAccounts(
   accessToken: string
 ): Promise<TrueLayerAccountResponse> {
-  const response = await fetch(`${SANDBOX_API_URL}/data/v1/accounts`, {
+  const response = await fetch(`${API_URL}/data/v1/accounts`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -178,7 +193,7 @@ export async function fetchAccountBalance(
   accountId: string
 ): Promise<TrueLayerBalanceResponse> {
   const response = await fetch(
-    `${SANDBOX_API_URL}/data/v1/accounts/${accountId}/balance`,
+    `${API_URL}/data/v1/accounts/${accountId}/balance`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -208,7 +223,7 @@ export async function fetchTransactions(
   const to = toDate || now.toISOString().split("T")[0];
 
   const response = await fetch(
-    `${SANDBOX_API_URL}/data/v1/accounts/${accountId}/transactions?from=${from}&to=${to}`,
+    `${API_URL}/data/v1/accounts/${accountId}/transactions?from=${from}&to=${to}`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -262,7 +277,7 @@ export async function fetchDirectDebits(
   accountId: string
 ): Promise<TrueLayerDirectDebitResponse> {
   const response = await fetch(
-    `${SANDBOX_API_URL}/data/v1/accounts/${accountId}/direct_debits`,
+    `${API_URL}/data/v1/accounts/${accountId}/direct_debits`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
