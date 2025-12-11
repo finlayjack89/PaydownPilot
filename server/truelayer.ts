@@ -18,9 +18,10 @@ const API_URL = USE_SANDBOX
   ? "https://api.truelayer-sandbox.com" 
   : "https://api.truelayer.com";
 
-// Provider selection - using mock bank for testing
-// TODO: Switch to "uk-ob-all uk-oauth-all" for production when ready to go live
-const PROVIDERS = USE_SANDBOX ? "uk-ob-mock" : "uk-ob-all uk-oauth-all";
+// Provider selection - using mock bank for testing, real UK banks for production
+// uk-cs-mock is the correct provider ID for TrueLayer Data API sandbox
+// TODO: Set USE_TRUELAYER_SANDBOX=false when ready to go live with real banks
+const PROVIDERS = USE_SANDBOX ? "uk-cs-mock" : "uk-ob-all uk-oauth-all";
 
 export interface TrueLayerTokenResponse {
   access_token: string;
