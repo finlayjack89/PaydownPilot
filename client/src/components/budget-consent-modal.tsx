@@ -79,9 +79,18 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
   const getAuthUrlMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("GET", "/api/truelayer/auth-url");
-      return response as unknown as TrueLayerAuthResponse;
+      const data = await response.json();
+      return data as TrueLayerAuthResponse;
     },
     onSuccess: (data) => {
+      if (!data.authUrl) {
+        toast({
+          title: "Configuration Error",
+          description: "TrueLayer is not properly configured. Please check your credentials.",
+          variant: "destructive",
+        });
+        return;
+      }
       setIsConnecting(true);
       window.location.href = data.authUrl;
     },

@@ -18,9 +18,18 @@ const REDIRECT_URI = process.env.TRUELAYER_REDIRECT_URI ||
   `${process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : 'http://localhost:5000'}/api/truelayer/callback`;
 
 export function registerTrueLayerRoutes(app: Express) {
+  // Log TrueLayer configuration on startup
+  console.log("[TrueLayer] Configuration check:", {
+    hasClientId: !!process.env.TRUELAYER_CLIENT_ID,
+    hasClientSecret: !!process.env.TRUELAYER_CLIENT_SECRET,
+    redirectUri: REDIRECT_URI,
+  });
+
   app.get("/api/truelayer/auth-url", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
+      
+      console.log("[TrueLayer] Auth URL request from user:", userId);
       
       if (userId === "guest-user") {
         return res.status(403).json({ 
@@ -28,9 +37,19 @@ export function registerTrueLayerRoutes(app: Express) {
         });
       }
 
+      // Check if TrueLayer is configured
+      if (!process.env.TRUELAYER_CLIENT_ID || !process.env.TRUELAYER_CLIENT_SECRET) {
+        console.error("[TrueLayer] Missing credentials - CLIENT_ID:", !!process.env.TRUELAYER_CLIENT_ID, "CLIENT_SECRET:", !!process.env.TRUELAYER_CLIENT_SECRET);
+        return res.status(500).json({
+          message: "TrueLayer is not configured. Please add TRUELAYER_CLIENT_ID and TRUELAYER_CLIENT_SECRET to your secrets.",
+        });
+      }
+
       const state = Buffer.from(JSON.stringify({ userId })).toString("base64");
       const authUrl = generateAuthUrl(REDIRECT_URI, state);
 
+      console.log("[TrueLayer] Generated auth URL successfully, redirect URI:", REDIRECT_URI);
+      
       res.json({ authUrl, redirectUri: REDIRECT_URI });
     } catch (error: any) {
       console.error("[TrueLayer] Error generating auth URL:", error);
