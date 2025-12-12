@@ -47,7 +47,6 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
     mutationFn: async () => {
       return await apiRequest("POST", "/api/budget/save-analyzed-budget", {
         currentBudgetCents: analysisData.safeToSpendCents,
-        potentialBudgetCents: null,
       });
     },
     onSuccess: () => {
