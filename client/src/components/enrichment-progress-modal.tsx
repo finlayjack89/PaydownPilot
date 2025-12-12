@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Info, Sparkles, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Info, Sparkles, AlertCircle, X, Loader2 } from "lucide-react";
 import { logoImage } from "./logo";
 
 interface EnrichmentProgress {
@@ -20,6 +21,7 @@ interface EnrichmentProgressModalProps {
   jobId: string | null;
   onComplete: (result: any) => void;
   onError: (error: string) => void;
+  onCancel?: () => Promise<void> | void;
 }
 
 export function EnrichmentProgressModal({
@@ -28,6 +30,7 @@ export function EnrichmentProgressModal({
   jobId,
   onComplete,
   onError,
+  onCancel,
 }: EnrichmentProgressModalProps) {
   const [progress, setProgress] = useState<EnrichmentProgress>({
     current: 0,
@@ -150,12 +153,34 @@ export function EnrichmentProgressModal({
     ? Math.round((progress.current / progress.total) * 100) 
     : 0;
 
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const handleCancel = useCallback(async () => {
+    if (isCancelling) return;
+    setIsCancelling(true);
+    
+    try {
+      // First call the onCancel callback which will cancel the backend job
+      if (onCancel) {
+        await onCancel();
+      }
+    } finally {
+      setIsCancelling(false);
+      onOpenChange(false);
+    }
+  }, [onCancel, onOpenChange, isCancelling]);
+
+  const handleEscapeOrOutsideClick = useCallback((e: Event) => {
+    e.preventDefault();
+    handleCancel();
+  }, [handleCancel]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         className="sm:max-w-md"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onPointerDownOutside={handleEscapeOrOutsideClick}
+        onEscapeKeyDown={handleEscapeOrOutsideClick}
       >
         <div className="flex flex-col items-center py-8 space-y-6">
           <div className="relative">
@@ -263,8 +288,28 @@ export function EnrichmentProgressModal({
           )}
 
           <p className="text-xs text-muted-foreground text-center max-w-xs">
-            Please don't close this window. Your transaction data is being securely processed.
+            Your transaction data is being securely processed.
           </p>
+
+          <Button
+            variant="outline"
+            onClick={handleCancel}
+            disabled={isCancelling}
+            className="mt-2"
+            data-testid="button-cancel-enrichment"
+          >
+            {isCancelling ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Cancelling...
+              </>
+            ) : (
+              <>
+                <X className="h-4 w-4 mr-2" />
+                Cancel
+              </>
+            )}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

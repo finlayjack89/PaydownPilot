@@ -485,15 +485,89 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
   /**
    * POST /api/budget/start-enrichment
    * Starts an async enrichment job and returns a jobId for SSE subscription
+   * If user has recent cached enriched transactions (within 24 hours), returns those instead
    */
   app.post("/api/budget/start-enrichment", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
+      const forceRefresh = req.body.forceRefresh === true;
       
       if (userId === "guest-user") {
         return res.status(403).send({ 
           message: "Budget analysis is not available for guest users." 
         });
+      }
+      
+      // Check for cached enriched transactions (unless force refresh requested)
+      if (!forceRefresh) {
+        const hasCachedData = await storage.hasRecentEnrichedTransactions(userId, 24);
+        
+        if (hasCachedData) {
+          console.log(`[Budget Analysis] Using cached enriched transactions for user ${userId}`);
+          
+          const cachedTransactions = await storage.getEnrichedTransactionsByUserId(userId);
+          
+          if (cachedTransactions.length > 0) {
+            // Convert cached transactions to the format expected by the budget analysis
+            const enrichedTransactions = cachedTransactions.map(tx => ({
+              transaction_id: tx.trueLayerTransactionId,
+              merchant_clean_name: tx.merchantCleanName,
+              merchant_logo_url: tx.merchantLogoUrl,
+              merchant_website_url: tx.merchantWebsiteUrl,
+              labels: tx.labels || [],
+              is_recurring: tx.isRecurring,
+              recurrence_frequency: tx.recurrenceFrequency,
+              recurrence_day: tx.recurrenceDay,
+              amount_cents: tx.amountCents,
+              entry_type: tx.entryType,
+              budget_category: tx.budgetCategory,
+              transaction_date: tx.transactionDate,
+            }));
+            
+            // Calculate budget analysis from cached data (all values in cents)
+            const incomingTx = enrichedTransactions.filter(t => t.entry_type === "incoming");
+            const outgoingTx = enrichedTransactions.filter(t => t.entry_type === "outgoing");
+            
+            const totalIncomeCents = incomingTx.reduce((sum, t) => sum + t.amount_cents, 0);
+            const fixedCostsCents = outgoingTx.filter(t => t.budget_category === "fixed").reduce((sum, t) => sum + t.amount_cents, 0);
+            const debtPaymentsCents = outgoingTx.filter(t => t.budget_category === "debt").reduce((sum, t) => sum + t.amount_cents, 0);
+            const discretionaryCents = outgoingTx.filter(t => t.budget_category === "discretionary").reduce((sum, t) => sum + t.amount_cents, 0);
+            const safeToSpendCents = totalIncomeCents - fixedCostsCents - debtPaymentsCents;
+            
+            // Build detected debts in the same format as the enrichment returns
+            const detectedDebts = outgoingTx
+              .filter(t => t.budget_category === "debt")
+              .map(t => ({
+                merchant_name: t.merchant_clean_name || "Unknown",
+                description: t.merchant_clean_name || "Debt payment",
+                amount_cents: t.amount_cents,
+                is_recurring: t.is_recurring || false,
+                recurrence_frequency: t.recurrence_frequency || null,
+                logo_url: t.merchant_logo_url || null,
+              }));
+            
+            return res.json({
+              success: true,
+              cached: true,
+              result: {
+                analysis: {
+                  averageMonthlyIncomeCents: totalIncomeCents,
+                  fixedCostsCents: fixedCostsCents,
+                  variableEssentialsCents: 0,
+                  discretionaryCents: discretionaryCents,
+                  safeToSpendCents: Math.max(0, safeToSpendCents),
+                  breakdown: {},
+                },
+                enrichedTransactions,
+                detectedDebts,
+                transactionCount: cachedTransactions.length,
+                directDebitCount: 0,
+                isEnriched: true,
+              },
+              message: "Using cached enriched transaction data",
+            });
+          }
+        }
       }
       
       // Get TrueLayer connection
@@ -640,6 +714,37 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
                       directDebitCount: directDebits.length,
                       isEnriched: true,
                     };
+                    
+                    // Save enriched transactions to cache for future use
+                    if (event.result.enriched_transactions && Array.isArray(event.result.enriched_transactions)) {
+                      try {
+                        const transactionsToSave = event.result.enriched_transactions.map((tx: any) => ({
+                          userId,
+                          trueLayerTransactionId: tx.transaction_id,
+                          ntropyTransactionId: tx.ntropy_transaction_id || null,
+                          originalDescription: tx.original_description || tx.description || "",
+                          merchantCleanName: tx.merchant_clean_name || null,
+                          merchantLogoUrl: tx.merchant_logo_url || null,
+                          merchantWebsiteUrl: tx.merchant_website_url || null,
+                          labels: tx.labels || [],
+                          isRecurring: tx.is_recurring || false,
+                          recurrenceFrequency: tx.recurrence_frequency || null,
+                          recurrenceDay: tx.recurrence_day || null,
+                          amountCents: tx.amount_cents,
+                          entryType: tx.entry_type,
+                          budgetCategory: tx.budget_category || null,
+                          transactionDate: tx.transaction_date,
+                          currency: tx.currency || "GBP",
+                        }));
+                        
+                        await storage.saveEnrichedTransactions(transactionsToSave);
+                        console.log(`[Enrichment Job ${jobId}] Saved ${transactionsToSave.length} enriched transactions to cache`);
+                      } catch (saveError) {
+                        console.error(`[Enrichment Job ${jobId}] Failed to save enriched transactions:`, saveError);
+                        // Don't fail the job, just log the error
+                      }
+                    }
+                    
                     broadcastToSubscribers(job, {
                       type: "complete",
                       result: job.result,
@@ -742,5 +847,51 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
         }, 60000); // Clean up after 1 minute
       }
     });
+  });
+
+  /**
+   * POST /api/budget/cancel-enrichment/:jobId
+   * Cancels an in-progress enrichment job
+   */
+  app.post("/api/budget/cancel-enrichment/:jobId", requireAuth, (req, res) => {
+    const { jobId } = req.params;
+    const userId = (req.user as any).id;
+    const job = enrichmentJobs.get(jobId);
+    
+    if (!job) {
+      // Job might already be gone, that's okay
+      return res.json({ success: true, message: "Job not found or already cancelled" });
+    }
+    
+    // Verify job belongs to user
+    if (job.userId !== userId) {
+      return res.status(403).send({ message: "Unauthorized" });
+    }
+    
+    console.log(`[Enrichment Job ${jobId}] Cancelled by user ${userId}`);
+    
+    // Mark job as cancelled/error and notify subscribers
+    job.status = "error";
+    job.error = "Cancelled by user";
+    
+    broadcastToSubscribers(job, {
+      type: "error",
+      message: "Enrichment cancelled",
+    });
+    
+    // Close all subscriber connections
+    job.subscribers.forEach(subscriber => {
+      try {
+        subscriber.end();
+      } catch (e) {
+        // Ignore errors
+      }
+    });
+    job.subscribers = [];
+    
+    // Clean up job immediately
+    enrichmentJobs.delete(jobId);
+    
+    res.json({ success: true, message: "Enrichment job cancelled" });
   });
 }

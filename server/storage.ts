@@ -1,5 +1,5 @@
 import { 
-  users, accounts, budgets, preferences, plans, lenderRules, trueLayerItems, debtBuckets,
+  users, accounts, budgets, preferences, plans, lenderRules, trueLayerItems, debtBuckets, enrichedTransactions,
   type User, type InsertUser, 
   type Account, type InsertAccount,
   type Budget, type InsertBudget,
@@ -8,10 +8,11 @@ import {
   type LenderRule, type InsertLenderRule,
   type TrueLayerItem, type InsertTrueLayerItem,
   type DebtBucket, type InsertDebtBucket,
-  type AccountWithBuckets
+  type AccountWithBuckets,
+  type EnrichedTransaction, type InsertEnrichedTransaction
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gte } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -63,6 +64,13 @@ export interface IStorage {
   createTrueLayerItem(item: InsertTrueLayerItem): Promise<TrueLayerItem>;
   updateTrueLayerItem(id: string, updates: Partial<TrueLayerItem>): Promise<TrueLayerItem | undefined>;
   deleteTrueLayerItem(userId: string): Promise<void>;
+  
+  // Enriched Transactions methods
+  getEnrichedTransactionsByUserId(userId: string): Promise<EnrichedTransaction[]>;
+  getEnrichedTransactionsCount(userId: string): Promise<number>;
+  hasRecentEnrichedTransactions(userId: string, maxAgeHours?: number): Promise<boolean>;
+  saveEnrichedTransactions(transactions: InsertEnrichedTransaction[]): Promise<void>;
+  deleteEnrichedTransactionsByUserId(userId: string): Promise<void>;
 }
 
 type BucketInput = Omit<InsertDebtBucket, 'accountId'>;
@@ -274,6 +282,59 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTrueLayerItem(userId: string): Promise<void> {
     await db.delete(trueLayerItems).where(eq(trueLayerItems.userId, userId));
+  }
+  
+  // Enriched Transactions methods
+  async getEnrichedTransactionsByUserId(userId: string): Promise<EnrichedTransaction[]> {
+    return await db.select().from(enrichedTransactions).where(eq(enrichedTransactions.userId, userId));
+  }
+  
+  async getEnrichedTransactionsCount(userId: string): Promise<number> {
+    const transactions = await db.select().from(enrichedTransactions).where(eq(enrichedTransactions.userId, userId));
+    return transactions.length;
+  }
+  
+  async hasRecentEnrichedTransactions(userId: string, maxAgeHours: number = 24): Promise<boolean> {
+    const cutoffDate = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+    const [transaction] = await db.select()
+      .from(enrichedTransactions)
+      .where(
+        and(
+          eq(enrichedTransactions.userId, userId),
+          gte(enrichedTransactions.createdAt, cutoffDate)
+        )
+      )
+      .limit(1);
+    return !!transaction;
+  }
+  
+  async saveEnrichedTransactions(transactions: InsertEnrichedTransaction[]): Promise<void> {
+    if (transactions.length === 0) return;
+    
+    // Use onConflictDoUpdate to upsert transactions
+    for (const tx of transactions) {
+      await db.insert(enrichedTransactions)
+        .values(tx)
+        .onConflictDoUpdate({
+          target: [enrichedTransactions.userId, enrichedTransactions.trueLayerTransactionId],
+          set: {
+            ntropyTransactionId: tx.ntropyTransactionId,
+            merchantCleanName: tx.merchantCleanName,
+            merchantLogoUrl: tx.merchantLogoUrl,
+            merchantWebsiteUrl: tx.merchantWebsiteUrl,
+            labels: tx.labels,
+            isRecurring: tx.isRecurring,
+            recurrenceFrequency: tx.recurrenceFrequency,
+            recurrenceDay: tx.recurrenceDay,
+            budgetCategory: tx.budgetCategory,
+            createdAt: new Date(),
+          },
+        });
+    }
+  }
+  
+  async deleteEnrichedTransactionsByUserId(userId: string): Promise<void> {
+    await db.delete(enrichedTransactions).where(eq(enrichedTransactions.userId, userId));
   }
 }
 
@@ -605,6 +666,42 @@ class GuestStorageWrapper implements IStorage {
       return;
     }
     return this.dbStorage.deleteTrueLayerItem(userId);
+  }
+  
+  // Enriched Transactions methods - pass through to database (guest users can't use this)
+  async getEnrichedTransactionsByUserId(userId: string): Promise<EnrichedTransaction[]> {
+    if (this.isGuest(userId)) {
+      return [];
+    }
+    return this.dbStorage.getEnrichedTransactionsByUserId(userId);
+  }
+  
+  async getEnrichedTransactionsCount(userId: string): Promise<number> {
+    if (this.isGuest(userId)) {
+      return 0;
+    }
+    return this.dbStorage.getEnrichedTransactionsCount(userId);
+  }
+  
+  async hasRecentEnrichedTransactions(userId: string, maxAgeHours?: number): Promise<boolean> {
+    if (this.isGuest(userId)) {
+      return false;
+    }
+    return this.dbStorage.hasRecentEnrichedTransactions(userId, maxAgeHours);
+  }
+  
+  async saveEnrichedTransactions(transactions: InsertEnrichedTransaction[]): Promise<void> {
+    // Filter out any guest user transactions (shouldn't happen but just in case)
+    const validTransactions = transactions.filter(tx => !this.isGuest(tx.userId));
+    if (validTransactions.length === 0) return;
+    return this.dbStorage.saveEnrichedTransactions(validTransactions);
+  }
+  
+  async deleteEnrichedTransactionsByUserId(userId: string): Promise<void> {
+    if (this.isGuest(userId)) {
+      return;
+    }
+    return this.dbStorage.deleteEnrichedTransactionsByUserId(userId);
   }
 }
 

@@ -111,26 +111,7 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
     getAuthUrlMutation.mutate();
   };
 
-  // Start streaming enrichment job
-  const startStreamingEnrichment = useCallback(async () => {
-    setIsAnalyzing(true);
-    
-    try {
-      // Start the enrichment job
-      const response = await apiRequest("POST", "/api/budget/start-enrichment", {});
-      const { jobId } = await response.json();
-      
-      console.log("[Budget Analysis] Started enrichment job:", jobId);
-      setEnrichmentJobId(jobId);
-      
-    } catch (error: any) {
-      console.error("[Budget Analysis] Failed to start enrichment:", error);
-      // Fallback to non-streaming analysis
-      analyzeTransactionsMutation.mutate();
-    }
-  }, [analyzeTransactionsMutation]);
-  
-  // Handle enrichment completion
+  // Handle enrichment completion (defined first so startStreamingEnrichment can use it)
   const handleEnrichmentComplete = useCallback((result: any) => {
     console.log("[Budget Analysis] Enrichment complete:", result);
     
@@ -165,6 +146,37 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
       variant: "destructive",
     });
   }, [toast]);
+
+  // Start streaming enrichment job
+  const startStreamingEnrichment = useCallback(async () => {
+    setIsAnalyzing(true);
+    
+    try {
+      // Start the enrichment job (may return cached data immediately)
+      const response = await apiRequest("POST", "/api/budget/start-enrichment", {});
+      const data = await response.json();
+      
+      // Check if we got cached data back immediately
+      if (data.cached && data.result) {
+        console.log("[Budget Analysis] Using cached enriched data:", data.message);
+        handleEnrichmentComplete(data.result);
+        return;
+      }
+      
+      // Otherwise, we have a streaming job
+      if (data.jobId) {
+        console.log("[Budget Analysis] Started enrichment job:", data.jobId);
+        setEnrichmentJobId(data.jobId);
+      } else {
+        throw new Error("No job ID returned from enrichment");
+      }
+      
+    } catch (error: any) {
+      console.error("[Budget Analysis] Failed to start enrichment:", error);
+      // Fallback to non-streaming analysis
+      analyzeTransactionsMutation.mutate();
+    }
+  }, [analyzeTransactionsMutation, handleEnrichmentComplete]);
 
   const handleAnalyze = () => {
     startStreamingEnrichment();
@@ -226,15 +238,44 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
     );
   }
 
+  // Handle enrichment cancellation - returns a Promise that resolves when cancellation is complete
+  const handleEnrichmentCancel = useCallback(async (): Promise<void> => {
+    console.log("[Budget Analysis] Enrichment cancelled by user");
+    
+    // Cancel the job on the backend if we have a job ID
+    if (enrichmentJobId) {
+      try {
+        const response = await apiRequest("POST", `/api/budget/cancel-enrichment/${enrichmentJobId}`, {});
+        const result = await response.json();
+        console.log("[Budget Analysis] Cancel response:", result);
+      } catch (error) {
+        console.error("[Budget Analysis] Error cancelling enrichment job:", error);
+        // Continue with cleanup even if backend call fails
+      }
+    }
+    
+    setIsAnalyzing(false);
+    setEnrichmentJobId(null);
+    toast({
+      title: "Analysis Cancelled",
+      description: "Transaction analysis has been cancelled.",
+    });
+  }, [enrichmentJobId, toast]);
+
   // Show analyzing state with progress modal
   if (isAnalyzing && enrichmentJobId) {
     return (
       <EnrichmentProgressModal
         open={open}
-        onOpenChange={() => {}}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            handleEnrichmentCancel();
+          }
+        }}
         jobId={enrichmentJobId}
         onComplete={handleEnrichmentComplete}
         onError={handleEnrichmentError}
+        onCancel={handleEnrichmentCancel}
       />
     );
   }
