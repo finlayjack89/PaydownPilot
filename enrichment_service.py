@@ -23,7 +23,9 @@ except ImportError as e:
     print(f"[EnrichmentService] Warning: ntropy-sdk not available ({e}), running in fallback mode")
 
 # Thread pool for concurrent Ntropy API calls
-_executor = ThreadPoolExecutor(max_workers=5)
+# Ntropy rate limit: max 10 concurrent enrichment operations, 500 credits/sec refill
+# Source: https://docs.ntropy.com/api/rate-limits
+_executor = ThreadPoolExecutor(max_workers=10)
 
 
 # ============== Pydantic Models for Type Safety ==============
