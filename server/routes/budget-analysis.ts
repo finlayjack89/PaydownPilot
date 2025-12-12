@@ -96,27 +96,91 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
       
       const analysisMonths = Math.max(1, Math.round(days / 30));
       
-      const analysis = analyzeBudget({
-        transactions: transactions.map(t => ({
-          description: t.description,
-          amount: t.amount,
-          transaction_classification: t.transaction_classification,
-          transaction_type: t.transaction_type as "CREDIT" | "DEBIT" | "STANDING_ORDER" | "DIRECT_DEBIT" | "FEE",
-          date: t.timestamp,
-        })),
-        direct_debits: directDebits.map(dd => ({
-          name: dd.name,
-          amount: dd.previous_payment_amount || 0,
-        })),
-        analysisMonths,
-      });
+      // Try Ntropy enrichment first, fall back to basic analysis
+      let analysis;
+      let enrichedTransactions = null;
+      let detectedDebts: any[] = [];
+      
+      try {
+        // Call Python enrichment service
+        const enrichmentResponse = await fetch("http://localhost:8000/enrich-transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transactions: transactions.map(t => ({
+              transaction_id: t.transaction_id,
+              description: t.description,
+              amount: t.amount,
+              currency: t.currency || "GBP",
+              transaction_type: t.transaction_type,
+              transaction_category: t.transaction_category,
+              transaction_classification: t.transaction_classification,
+              timestamp: t.timestamp,
+            })),
+            user_id: userId,
+            analysis_months: analysisMonths,
+          }),
+        });
+        
+        if (enrichmentResponse.ok) {
+          const enrichmentData = await enrichmentResponse.json();
+          console.log(`[Budget Analysis] Ntropy enrichment successful: ${enrichmentData.enriched_transactions?.length || 0} transactions enriched`);
+          
+          // Use enriched budget analysis
+          analysis = {
+            averageMonthlyIncomeCents: enrichmentData.budget_analysis.averageMonthlyIncomeCents,
+            fixedCostsCents: enrichmentData.budget_analysis.fixedCostsCents,
+            variableEssentialsCents: 0, // Ntropy doesn't separate variable essentials
+            discretionaryCents: enrichmentData.budget_analysis.discretionaryCents,
+            safeToSpendCents: enrichmentData.budget_analysis.safeToSpendCents,
+            detectedDebtPayments: enrichmentData.detected_debts.map((d: any) => ({
+              description: d.merchant_name || d.description,
+              amountCents: d.amount_cents,
+              type: "debt",
+              logoUrl: d.logo_url,
+              isRecurring: d.is_recurring,
+              recurrenceFrequency: d.recurrence_frequency,
+            })),
+            breakdown: {
+              income: [],
+              fixedCosts: [],
+              variableEssentials: [],
+              discretionary: [],
+            },
+          };
+          
+          enrichedTransactions = enrichmentData.enriched_transactions;
+          detectedDebts = enrichmentData.detected_debts;
+        } else {
+          console.log("[Budget Analysis] Ntropy enrichment unavailable, using fallback analysis");
+          throw new Error("Enrichment service returned non-OK status");
+        }
+      } catch (enrichmentError) {
+        console.log("[Budget Analysis] Using fallback budget analysis (Ntropy unavailable):", enrichmentError);
+        
+        // Fallback to original budget analysis
+        analysis = analyzeBudget({
+          transactions: transactions.map(t => ({
+            description: t.description,
+            amount: t.amount,
+            transaction_classification: t.transaction_classification,
+            transaction_type: t.transaction_type as "CREDIT" | "DEBIT" | "STANDING_ORDER" | "DIRECT_DEBIT" | "FEE",
+            date: t.timestamp,
+          })),
+          direct_debits: directDebits.map(dd => ({
+            name: dd.name,
+            amount: dd.previous_payment_amount || 0,
+          })),
+          analysisMonths,
+        });
+      }
       
       console.log(`[Budget Analysis] Results for user ${userId}:`, {
         income: analysis.averageMonthlyIncomeCents / 100,
         fixed: analysis.fixedCostsCents / 100,
         variable: analysis.variableEssentialsCents / 100,
         safeToSpend: analysis.safeToSpendCents / 100,
-        debtsDetected: analysis.detectedDebtPayments,
+        debtsDetected: analysis.detectedDebtPayments?.length || detectedDebts.length,
       });
       
       await storage.updateTrueLayerItem(trueLayerItem.id, {
@@ -126,9 +190,11 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
       res.json({
         success: true,
         analysis,
+        enrichedTransactions,
+        detectedDebts,
         transactionCount: transactions.length,
         directDebitCount: directDebits.length,
-        message: "Transaction analysis completed successfully"
+        message: enrichedTransactions ? "Transaction analysis with Ntropy enrichment completed" : "Transaction analysis completed successfully"
       });
       
     } catch (error: any) {

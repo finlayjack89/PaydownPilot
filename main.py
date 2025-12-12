@@ -1,11 +1,14 @@
-# main.py (Production Ready - v1.3)
+# main.py (Production Ready - v1.4)
 
 import sys
 from fastapi import FastAPI, HTTPException
-from typing import Optional, List 
+from typing import Optional, List, Dict, Any
 
 # Import our Pydantic schemas
 import schemas
+
+# Import the enrichment service
+from enrichment_service import EnrichmentService, enrich_and_analyze_budget, NtropyOutputModel
 
 # Import the solver function AND the necessary dataclasses
 # (We need the dataclasses to pass the correct type to the solver)
@@ -151,3 +154,54 @@ async def create_payment_plan(portfolio_input: schemas.DebtPortfolio):
     except Exception as e:
         print(f"An unexpected error occurred: {e}", file=sys.stderr)
         raise HTTPException(status_code=500, detail="An internal server error occurred during plan generation.")
+
+
+# --- Transaction Enrichment Endpoint ---
+class EnrichmentRequest(schemas.BaseModel):
+    """Request for transaction enrichment"""
+    transactions: List[Dict[str, Any]]
+    user_id: str
+    analysis_months: int = 3
+
+class EnrichmentResponse(schemas.BaseModel):
+    """Response from transaction enrichment"""
+    success: bool
+    enriched_transactions: List[Dict[str, Any]]
+    budget_analysis: Dict[str, Any]
+    detected_debts: List[Dict[str, Any]]
+    message: Optional[str] = None
+
+
+@app.post("/enrich-transactions", response_model=EnrichmentResponse)
+async def enrich_transactions(request: EnrichmentRequest):
+    """
+    Enriches TrueLayer transactions with Ntropy and returns budget classification.
+    
+    This endpoint:
+    1. Normalizes raw TrueLayer transaction data
+    2. Enriches with Ntropy for merchant info and labels (if available)
+    3. Classifies transactions into budget categories (debt/fixed/discretionary)
+    4. Computes budget breakdown
+    """
+    print(f"[Enrichment] Received request to enrich {len(request.transactions)} transactions")
+    
+    try:
+        result = await enrich_and_analyze_budget(
+            raw_transactions=request.transactions,
+            user_id=request.user_id,
+            analysis_months=request.analysis_months
+        )
+        
+        print(f"[Enrichment] Successfully enriched transactions. Found {len(result['detected_debts'])} potential debts.")
+        
+        return EnrichmentResponse(
+            success=True,
+            enriched_transactions=result["enriched_transactions"],
+            budget_analysis=result["budget_analysis"],
+            detected_debts=result["detected_debts"],
+            message=f"Enriched {len(result['enriched_transactions'])} transactions"
+        )
+        
+    except Exception as e:
+        print(f"[Enrichment] Error: {e}", file=sys.stderr)
+        raise HTTPException(status_code=500, detail=f"Enrichment failed: {str(e)}")

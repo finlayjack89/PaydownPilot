@@ -164,6 +164,30 @@ export const trueLayerItems = pgTable("truelayer_items", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Enriched Transactions Cache (Ntropy enrichment results)
+export const enrichedTransactions = pgTable("enriched_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  trueLayerTransactionId: text("truelayer_transaction_id").notNull(),
+  ntropyTransactionId: text("ntropy_transaction_id"),
+  originalDescription: text("original_description").notNull(),
+  merchantCleanName: text("merchant_clean_name"),
+  merchantLogoUrl: text("merchant_logo_url"),
+  merchantWebsiteUrl: text("merchant_website_url"),
+  labels: jsonb("labels").$type<string[]>().default([]),
+  isRecurring: boolean("is_recurring").default(false),
+  recurrenceFrequency: text("recurrence_frequency"),
+  recurrenceDay: integer("recurrence_day"),
+  amountCents: integer("amount_cents").notNull(),
+  entryType: text("entry_type").notNull(), // 'incoming' or 'outgoing'
+  budgetCategory: text("budget_category"), // 'debt', 'fixed', 'discretionary'
+  transactionDate: date("transaction_date").notNull(),
+  currency: text("currency").default("GBP"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userTransactionUnique: unique().on(table.userId, table.trueLayerTransactionId),
+}));
+
 // TypeScript Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
@@ -191,6 +215,9 @@ export type InsertLenderProduct = typeof lenderProducts.$inferInsert;
 
 export type TrueLayerItem = typeof trueLayerItems.$inferSelect;
 export type InsertTrueLayerItem = typeof trueLayerItems.$inferInsert;
+
+export type EnrichedTransaction = typeof enrichedTransactions.$inferSelect;
+export type InsertEnrichedTransaction = typeof enrichedTransactions.$inferInsert;
 
 // API Request/Response Types
 export interface MinPaymentRule {
