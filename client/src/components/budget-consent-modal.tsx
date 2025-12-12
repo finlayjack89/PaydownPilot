@@ -37,43 +37,8 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
     refetchInterval: isConnecting ? 2000 : false,
   });
 
-  // Reset state when modal closes
-  useEffect(() => {
-    if (!open) {
-      setIsConnecting(false);
-      setIsAnalyzing(false);
-      setAnalysisResults(null);
-    }
-  }, [open]);
-
-  // Check URL params for callback result
-  useEffect(() => {
-    if (open) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const connected = urlParams.get("connected");
-      const error = urlParams.get("error");
-      
-      if (connected === "true") {
-        window.history.replaceState({}, "", window.location.pathname);
-        setIsConnecting(false);
-        refetchStatus();
-        toast({
-          title: "Bank Connected",
-          description: "Your bank account has been connected successfully.",
-        });
-      } else if (error) {
-        window.history.replaceState({}, "", window.location.pathname);
-        setIsConnecting(false);
-        toast({
-          title: "Connection Failed",
-          description: error === "session_expired" 
-            ? "Your session has expired. Please log in again." 
-            : `Failed to connect: ${error}`,
-          variant: "destructive",
-        });
-      }
-    }
-  }, [open, refetchStatus, toast]);
+  // Track if we've already triggered auto-analysis to avoid double triggers
+  const [hasAutoTriggered, setHasAutoTriggered] = useState(false);
 
   // Get TrueLayer auth URL
   const getAuthUrlMutation = useMutation({
@@ -145,6 +110,51 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
     setIsAnalyzing(true);
     analyzeTransactionsMutation.mutate();
   };
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setIsConnecting(false);
+      setIsAnalyzing(false);
+      setAnalysisResults(null);
+      setHasAutoTriggered(false);
+    }
+  }, [open]);
+
+  // Check URL params for callback result and auto-trigger analysis
+  useEffect(() => {
+    if (open && !hasAutoTriggered) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const connected = urlParams.get("connected");
+      const error = urlParams.get("error");
+      
+      if (connected === "true") {
+        window.history.replaceState({}, "", window.location.pathname);
+        setIsConnecting(false);
+        setHasAutoTriggered(true);
+        refetchStatus();
+        toast({
+          title: "Bank Connected",
+          description: "Analyzing your transactions automatically...",
+        });
+        // Auto-trigger analysis after successful connection
+        setIsAnalyzing(true);
+        setTimeout(() => {
+          analyzeTransactionsMutation.mutate();
+        }, 500);
+      } else if (error) {
+        window.history.replaceState({}, "", window.location.pathname);
+        setIsConnecting(false);
+        toast({
+          title: "Connection Failed",
+          description: error === "session_expired" 
+            ? "Your session has expired. Please log in again." 
+            : `Failed to connect: ${error}`,
+          variant: "destructive",
+        });
+      }
+    }
+  }, [open, hasAutoTriggered, refetchStatus, toast, analyzeTransactionsMutation]);
 
   // If we have analysis results, show the analysis view
   if (analysisResults) {
