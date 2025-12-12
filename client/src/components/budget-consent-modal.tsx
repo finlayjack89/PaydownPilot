@@ -71,9 +71,10 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
   // Analyze transactions
   const analyzeTransactionsMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/budget/analyze-transactions", {
+      const response = await apiRequest("POST", "/api/budget/analyze-transactions", {
         days: 90,
       });
+      return await response.json();
     },
     onSuccess: (data: any) => {
       setIsAnalyzing(false);
