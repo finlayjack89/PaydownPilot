@@ -1,26 +1,29 @@
 # enrichment_service.py - Ntropy Transaction Enrichment Service
 # Handles TrueLayer → Ntropy → Budget Classification pipeline
-# Version: 1.1 - With ntropy-sdk support
+# Version: 1.2 - With concurrent processing and streaming support
 
 import os
 import hashlib
-from typing import List, Dict, Any, Optional
+import asyncio
+from typing import List, Dict, Any, Optional, AsyncGenerator, Callable
 from pydantic import BaseModel, Field
+from concurrent.futures import ThreadPoolExecutor
+import time
 
 # Ntropy SDK import
 NTROPY_AVAILABLE = False
 NtropySDK = None
-NtropyTransactionInput = None
 
 try:
     from ntropy_sdk import SDK
-    from ntropy_sdk.transactions import TransactionInput
     NtropySDK = SDK
-    NtropyTransactionInput = TransactionInput
     NTROPY_AVAILABLE = True
     print("[EnrichmentService] Ntropy SDK loaded successfully")
 except ImportError as e:
     print(f"[EnrichmentService] Warning: ntropy-sdk not available ({e}), running in fallback mode")
+
+# Thread pool for concurrent Ntropy API calls
+_executor = ThreadPoolExecutor(max_workers=5)
 
 
 # ============== Pydantic Models for Type Safety ==============
@@ -171,6 +174,215 @@ class EnrichmentService:
         # unless explicitly marked as credit
         return "outgoing"
     
+    def _enrich_single_sync(self, tx_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Synchronous single transaction enrichment for thread pool"""
+        try:
+            enriched = self.sdk.transactions.create(
+                id=tx_data["id"],
+                description=tx_data["description"],
+                amount=tx_data["amount"],
+                entry_type=tx_data["entry_type"],
+                currency=tx_data["currency"],
+                date=tx_data["date"],
+                account_holder_id=tx_data["account_holder_id"],
+            )
+            return enriched.model_dump() if hasattr(enriched, 'model_dump') else None
+        except Exception as e:
+            print(f"[EnrichmentService] Error enriching {tx_data['id']}: {e}")
+            return None
+    
+    async def _enrich_concurrent(
+        self, 
+        tx_data_list: List[Dict[str, Any]], 
+        loop: asyncio.AbstractEventLoop
+    ) -> List[Optional[Dict[str, Any]]]:
+        """
+        Enrich transactions concurrently using thread pool.
+        Significantly faster than sequential processing.
+        """
+        tasks = [
+            loop.run_in_executor(_executor, self._enrich_single_sync, tx_data)
+            for tx_data in tx_data_list
+        ]
+        return await asyncio.gather(*tasks)
+    
+    async def enrich_transactions_streaming(
+        self,
+        raw_transactions: List[Dict[str, Any]],
+        user_id: str,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Stream enrichment progress with real-time updates.
+        Yields progress events and final result.
+        
+        Args:
+            raw_transactions: List of raw TrueLayer transaction dicts
+            user_id: User ID for recurrence detection
+            progress_callback: Optional callback(current, total, status)
+            
+        Yields:
+            Progress events: {"type": "progress", "current": N, "total": M, "status": "enriching"}
+            Complete event: {"type": "complete", "result": {...}}
+        """
+        total = len(raw_transactions)
+        start_time = time.time()
+        
+        # Phase 1: Normalize
+        yield {"type": "progress", "current": 0, "total": total, "status": "extracting", "startTime": int(start_time * 1000)}
+        
+        normalized = [self.normalize_truelayer_transaction(tx) for tx in raw_transactions]
+        
+        # Phase 2: Enrich with Ntropy
+        results: List[NtropyOutputModel] = []
+        
+        if self.sdk and NTROPY_AVAILABLE:
+            yield {"type": "progress", "current": 0, "total": total, "status": "enriching", "startTime": int(start_time * 1000)}
+            
+            loop = asyncio.get_event_loop()
+            
+            # Process in batches of 10 for better progress visibility
+            batch_size = 10
+            for batch_start in range(0, total, batch_size):
+                batch_end = min(batch_start + batch_size, total)
+                batch = normalized[batch_start:batch_end]
+                
+                # Prepare batch data
+                tx_data_list = []
+                for norm_tx in batch:
+                    entry_type = self._determine_entry_type(norm_tx)
+                    tx_data_list.append({
+                        "id": norm_tx.transaction_id,
+                        "description": norm_tx.description,
+                        "amount": norm_tx.amount,
+                        "entry_type": entry_type,
+                        "currency": norm_tx.currency,
+                        "date": norm_tx.timestamp,
+                        "account_holder_id": self._hash_user_id(user_id),
+                    })
+                
+                # Enrich batch concurrently
+                enriched_batch = await self._enrich_concurrent(tx_data_list, loop)
+                
+                # Process results
+                for i, enriched_dict in enumerate(enriched_batch):
+                    norm_tx = batch[i]
+                    
+                    if enriched_dict is None:
+                        results.append(self._create_fallback_output(norm_tx))
+                    else:
+                        labels = enriched_dict.get('labels', []) or []
+                        merchant = enriched_dict.get('merchant', {}) or {}
+                        recurrence = enriched_dict.get('recurrence', {}) or {}
+                        
+                        entry_type = self._determine_entry_type(norm_tx)
+                        budget_category = self.classify_transaction(
+                            labels=labels,
+                            is_recurring=recurrence.get('is_recurring', False),
+                            entry_type=entry_type
+                        )
+                        
+                        results.append(NtropyOutputModel(
+                            transaction_id=norm_tx.transaction_id,
+                            original_description=norm_tx.description,
+                            merchant_clean_name=merchant.get('name'),
+                            merchant_logo_url=merchant.get('logo'),
+                            merchant_website_url=merchant.get('website'),
+                            labels=labels,
+                            is_recurring=recurrence.get('is_recurring', False),
+                            recurrence_frequency=recurrence.get('frequency'),
+                            recurrence_day=recurrence.get('day_of_month'),
+                            amount_cents=int(norm_tx.amount * 100),
+                            entry_type=entry_type,
+                            budget_category=budget_category,
+                            transaction_date=norm_tx.timestamp
+                        ))
+                
+                # Emit progress update
+                current = len(results)
+                yield {
+                    "type": "progress", 
+                    "current": current, 
+                    "total": total, 
+                    "status": "enriching",
+                    "startTime": int(start_time * 1000)
+                }
+        else:
+            # Fallback mode
+            yield {"type": "progress", "current": 0, "total": total, "status": "classifying", "startTime": int(start_time * 1000)}
+            results = self._fallback_classification(normalized)
+        
+        # Phase 3: Compute budget analysis
+        yield {"type": "progress", "current": total, "total": total, "status": "classifying", "startTime": int(start_time * 1000)}
+        
+        budget_analysis = self._compute_budget_breakdown(results)
+        detected_debts = self._extract_detected_debts(results)
+        
+        # Final result
+        yield {
+            "type": "complete",
+            "result": {
+                "enriched_transactions": [r.model_dump() for r in results],
+                "budget_analysis": budget_analysis,
+                "detected_debts": detected_debts
+            }
+        }
+    
+    def _compute_budget_breakdown(self, enriched: List[NtropyOutputModel], analysis_months: int = 3) -> Dict[str, Any]:
+        """Compute budget breakdown from enriched transactions"""
+        income_total = 0
+        fixed_total = 0
+        discretionary_total = 0
+        debt_total = 0
+        
+        for tx in enriched:
+            if tx.entry_type == "incoming":
+                income_total += tx.amount_cents
+            elif tx.budget_category == "fixed":
+                fixed_total += tx.amount_cents
+            elif tx.budget_category == "discretionary":
+                discretionary_total += tx.amount_cents
+            elif tx.budget_category == "debt":
+                debt_total += tx.amount_cents
+        
+        # Monthly averages
+        months = max(1, analysis_months)
+        monthly_income = income_total // months
+        monthly_fixed = fixed_total // months
+        monthly_discretionary = discretionary_total // months
+        monthly_debt = debt_total // months
+        
+        safe_to_spend = max(0, monthly_income - monthly_fixed - monthly_debt)
+        
+        return {
+            "averageMonthlyIncomeCents": monthly_income,
+            "fixedCostsCents": monthly_fixed,
+            "discretionaryCents": monthly_discretionary,
+            "debtPaymentsCents": monthly_debt,
+            "safeToSpendCents": safe_to_spend
+        }
+    
+    def _extract_detected_debts(self, enriched: List[NtropyOutputModel]) -> List[Dict[str, Any]]:
+        """Extract detected debt payments from enriched transactions"""
+        debts = []
+        seen = set()
+        
+        for tx in enriched:
+            if tx.budget_category == "debt":
+                key = (tx.merchant_clean_name or tx.original_description, tx.amount_cents)
+                if key not in seen:
+                    seen.add(key)
+                    debts.append({
+                        "description": tx.original_description,
+                        "merchant_name": tx.merchant_clean_name,
+                        "amount_cents": tx.amount_cents,
+                        "logo_url": tx.merchant_logo_url,
+                        "is_recurring": tx.is_recurring,
+                        "recurrence_frequency": tx.recurrence_frequency
+                    })
+        
+        return debts
+    
     def classify_transaction(
         self,
         labels: List[str],
@@ -232,57 +444,38 @@ class EnrichmentService:
         ]
         
         # Phase 2: Enrich with Ntropy (if available)
-        if self.sdk and NTROPY_AVAILABLE and NtropyTransactionInput:
+        if self.sdk and NTROPY_AVAILABLE:
             try:
-                # Prepare batch for Ntropy using TransactionInput class
-                ntropy_inputs = []
+                # Prepare transaction data for concurrent processing
+                tx_data_list = []
                 for norm_tx in normalized:
                     entry_type = self._determine_entry_type(norm_tx)
-                    ntropy_inputs.append(NtropyTransactionInput(
-                        id=norm_tx.transaction_id,
-                        description=norm_tx.description,
-                        amount=norm_tx.amount,
-                        entry_type=entry_type,
-                        currency=norm_tx.currency,
-                        date=norm_tx.timestamp,
-                        account_holder_id=self._hash_user_id(user_id),
-                        account_holder_type="consumer",
-                        location={"country": "GB"}  # UK transactions
-                    ))
+                    tx_data_list.append({
+                        "id": norm_tx.transaction_id,
+                        "description": norm_tx.description,
+                        "amount": norm_tx.amount,
+                        "entry_type": entry_type,
+                        "currency": norm_tx.currency,
+                        "date": norm_tx.timestamp,
+                        "account_holder_id": self._hash_user_id(user_id),
+                    })
                 
-                # Call Ntropy SDK for batch enrichment using the transactions.create method
-                print(f"[EnrichmentService] Enriching {len(ntropy_inputs)} transactions with Ntropy...")
+                print(f"[EnrichmentService] Enriching {len(tx_data_list)} transactions with Ntropy (concurrent)...")
                 
-                # Process each transaction individually (or use batch if available)
-                enriched_batch = []
-                for tx_input in ntropy_inputs:
-                    try:
-                        enriched_tx = self.sdk.transactions.create(
-                            id=tx_input.id,
-                            description=tx_input.description,
-                            amount=tx_input.amount,
-                            entry_type=tx_input.entry_type,
-                            currency=tx_input.currency,
-                            date=tx_input.date,
-                            account_holder_id=tx_input.account_holder_id,
-                        )
-                        enriched_batch.append(enriched_tx)
-                    except Exception as tx_err:
-                        print(f"[EnrichmentService] Error enriching transaction {tx_input.id}: {tx_err}")
-                        enriched_batch.append(None)
+                # Use concurrent processing for speed
+                loop = asyncio.get_event_loop()
+                enriched_batch = await self._enrich_concurrent(tx_data_list, loop)
                 
                 # Process enriched results
-                for i, enriched in enumerate(enriched_batch):
+                for i, enriched_dict in enumerate(enriched_batch):
                     norm_tx = normalized[i]
                     
                     # Skip if enrichment failed for this transaction
-                    if enriched is None:
+                    if enriched_dict is None:
                         results.append(self._create_fallback_output(norm_tx))
                         continue
                     
-                    # Extract Ntropy fields safely
-                    enriched_dict = enriched.model_dump() if hasattr(enriched, 'model_dump') else {}
-                    
+                    # enriched_dict is already a dict from _enrich_concurrent
                     labels = enriched_dict.get('labels', []) or []
                     merchant = enriched_dict.get('merchant', {}) or {}
                     recurrence = enriched_dict.get('recurrence', {}) or {}

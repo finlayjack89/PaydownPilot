@@ -1,7 +1,11 @@
-# main.py (Production Ready - v1.4)
+# main.py (Production Ready - v1.5 - Streaming Enrichment)
 
 import sys
+import asyncio
+import time
+import json
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any
 
 # Import our Pydantic schemas
@@ -205,3 +209,47 @@ async def enrich_transactions(request: EnrichmentRequest):
     except Exception as e:
         print(f"[Enrichment] Error: {e}", file=sys.stderr)
         raise HTTPException(status_code=500, detail=f"Enrichment failed: {str(e)}")
+
+
+# --- Streaming Enrichment Endpoint ---
+class StreamingEnrichmentRequest(schemas.BaseModel):
+    """Request for streaming transaction enrichment"""
+    transactions: List[Dict[str, Any]]
+    user_id: str
+    analysis_months: int = 3
+
+
+@app.post("/enrich-transactions-stream")
+async def enrich_transactions_streaming(request: StreamingEnrichmentRequest):
+    """
+    Streams enrichment progress as Server-Sent Events.
+    
+    Returns SSE stream with events:
+    - {"type": "progress", "current": N, "total": M, "status": "...", "startTime": ...}
+    - {"type": "complete", "result": {...}}
+    - {"type": "error", "message": "..."}
+    """
+    print(f"[Enrichment Stream] Starting streaming enrichment for {len(request.transactions)} transactions")
+    
+    service = EnrichmentService()
+    
+    async def generate_events():
+        try:
+            async for event in service.enrich_transactions_streaming(
+                raw_transactions=request.transactions,
+                user_id=request.user_id
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            print(f"[Enrichment Stream] Error: {e}", file=sys.stderr)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )

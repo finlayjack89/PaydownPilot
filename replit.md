@@ -34,6 +34,12 @@ Preferred communication style: Simple, everyday language.
   - Account payoff dates (purple) celebrating debt-free milestones
   - Month/year navigation controls and "Today" button
   - Upcoming events list for next 3 months
+- **Ntropy Enrichment with Streaming Progress**: Transaction enrichment uses Ntropy SDK for accurate merchant identification, recurrence detection, and budget categorization. Features:
+  - Concurrent processing with asyncio.gather() for significantly faster enrichment
+  - Real-time SSE streaming of enrichment progress from Python → Express → Frontend
+  - EnrichmentProgressModal with animated Resolve logo, progress bar, transaction count, and ETA
+  - Fallback to deterministic categorization if Ntropy is unavailable
+  - Job orchestration in Express with in-memory registry for SSE broadcasting
 
 ### Backend
 - **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication. Python backend (FastAPI) for the optimization engine.

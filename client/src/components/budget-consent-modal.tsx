@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Shield, Loader2, ExternalLink, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { BudgetAnalysisView } from "./budget-analysis-view";
+import { EnrichmentProgressModal } from "./enrichment-progress-modal";
 
 interface BudgetConsentModalProps {
   open: boolean;
@@ -29,6 +30,9 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
   const [isConnecting, setIsConnecting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<any>(null);
+  
+  // Streaming enrichment state
+  const [enrichmentJobId, setEnrichmentJobId] = useState<string | null>(null);
 
   // Check TrueLayer connection status
   const { data: connectionStatus, refetch: refetchStatus } = useQuery<TrueLayerStatusResponse>({
@@ -107,9 +111,63 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
     getAuthUrlMutation.mutate();
   };
 
-  const handleAnalyze = () => {
+  // Start streaming enrichment job
+  const startStreamingEnrichment = useCallback(async () => {
     setIsAnalyzing(true);
-    analyzeTransactionsMutation.mutate();
+    
+    try {
+      // Start the enrichment job
+      const response = await apiRequest("POST", "/api/budget/start-enrichment", {});
+      const { jobId } = await response.json();
+      
+      console.log("[Budget Analysis] Started enrichment job:", jobId);
+      setEnrichmentJobId(jobId);
+      
+    } catch (error: any) {
+      console.error("[Budget Analysis] Failed to start enrichment:", error);
+      // Fallback to non-streaming analysis
+      analyzeTransactionsMutation.mutate();
+    }
+  }, [analyzeTransactionsMutation]);
+  
+  // Handle enrichment completion
+  const handleEnrichmentComplete = useCallback((result: any) => {
+    console.log("[Budget Analysis] Enrichment complete:", result);
+    
+    // Transform result to expected format
+    const transformedData = {
+      averageMonthlyIncomeCents: result.analysis?.averageMonthlyIncomeCents || 0,
+      fixedCostsCents: result.analysis?.fixedCostsCents || 0,
+      variableEssentialsCents: result.analysis?.variableEssentialsCents || 0,
+      discretionaryCents: result.analysis?.discretionaryCents || 0,
+      safeToSpendCents: result.analysis?.safeToSpendCents || 0,
+      detectedDebtPayments: result.detectedDebts || [],
+      breakdown: result.analysis?.breakdown || {},
+      transactionCount: result.transactionCount,
+      directDebitCount: result.directDebitCount,
+      enrichedTransactions: result.enrichedTransactions,
+      isEnriched: result.isEnriched,
+    };
+    
+    setIsAnalyzing(false);
+    setEnrichmentJobId(null);
+    setAnalysisResults(transformedData);
+  }, []);
+  
+  // Handle enrichment error
+  const handleEnrichmentError = useCallback((errorMessage: string) => {
+    console.error("[Budget Analysis] Enrichment error:", errorMessage);
+    setIsAnalyzing(false);
+    setEnrichmentJobId(null);
+    toast({
+      title: "Analysis Error",
+      description: errorMessage || "Failed to analyze transactions.",
+      variant: "destructive",
+    });
+  }, [toast]);
+
+  const handleAnalyze = () => {
+    startStreamingEnrichment();
   };
 
   // Reset state when modal closes
@@ -119,6 +177,7 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
       setIsAnalyzing(false);
       setAnalysisResults(null);
       setHasAutoTriggered(false);
+      setEnrichmentJobId(null);
     }
   }, [open]);
 
@@ -138,10 +197,9 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
           title: "Bank Connected",
           description: "Analyzing your transactions automatically...",
         });
-        // Auto-trigger analysis after successful connection
-        setIsAnalyzing(true);
+        // Auto-trigger streaming analysis after successful connection
         setTimeout(() => {
-          analyzeTransactionsMutation.mutate();
+          startStreamingEnrichment();
         }, 500);
       } else if (error) {
         window.history.replaceState({}, "", window.location.pathname);
@@ -168,7 +226,20 @@ export function BudgetConsentModal({ open, onOpenChange }: BudgetConsentModalPro
     );
   }
 
-  // Show analyzing state
+  // Show analyzing state with progress modal
+  if (isAnalyzing && enrichmentJobId) {
+    return (
+      <EnrichmentProgressModal
+        open={open}
+        onOpenChange={() => {}}
+        jobId={enrichmentJobId}
+        onComplete={handleEnrichmentComplete}
+        onError={handleEnrichmentError}
+      />
+    );
+  }
+  
+  // Fallback for analyzing without job ID (shouldn't happen normally)
   if (isAnalyzing) {
     return (
       <Dialog open={open} onOpenChange={() => {}}>

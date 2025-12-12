@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import { requireAuth } from "../auth";
 import { storage } from "../storage";
 import { decryptToken } from "../encryption";
@@ -7,12 +7,39 @@ import { getPersonaById, PERSONAS } from "../mock-data/truelayer-personas";
 import { budgetAnalyzeRequestSchema } from "@shared/schema";
 import { z } from "zod";
 import { fetchAllTransactions, fetchAllDirectDebits, refreshAccessToken, encryptToken } from "../truelayer";
+import { randomUUID } from "crypto";
 
 // Request validation schemas
 const saveBudgetSchema = z.object({
   currentBudgetCents: z.number().int().min(0),
   potentialBudgetCents: z.number().int().min(0).optional(),
 });
+
+// Job state management for SSE streaming
+interface EnrichmentJob {
+  id: string;
+  userId: string;
+  status: "pending" | "extracting" | "enriching" | "classifying" | "complete" | "error";
+  current: number;
+  total: number;
+  startTime: number;
+  result?: any;
+  error?: string;
+  subscribers: Response[];
+}
+
+const enrichmentJobs = new Map<string, EnrichmentJob>();
+
+function broadcastToSubscribers(job: EnrichmentJob, event: any) {
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  job.subscribers.forEach(res => {
+    try {
+      res.write(data);
+    } catch (e) {
+      // Subscriber disconnected
+    }
+  });
+}
 
 export function registerBudgetAnalysisRoutes(app: Express): void {
   /**
@@ -449,5 +476,271 @@ export function registerBudgetAnalysisRoutes(app: Express): void {
         message: "Failed to apply budget. Please try again." 
       });
     }
+  });
+
+  // ============================================
+  // Streaming Enrichment Endpoints
+  // ============================================
+
+  /**
+   * POST /api/budget/start-enrichment
+   * Starts an async enrichment job and returns a jobId for SSE subscription
+   */
+  app.post("/api/budget/start-enrichment", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      
+      if (userId === "guest-user") {
+        return res.status(403).send({ 
+          message: "Budget analysis is not available for guest users." 
+        });
+      }
+      
+      // Get TrueLayer connection
+      const trueLayerItem = await storage.getTrueLayerItemByUserId(userId);
+      if (!trueLayerItem) {
+        return res.status(404).send({ 
+          message: "No bank account connected." 
+        });
+      }
+      
+      let accessToken: string;
+      try {
+        accessToken = decryptToken(trueLayerItem.accessTokenEncrypted);
+      } catch (error: any) {
+        return res.status(500).send({ 
+          message: "Failed to access bank connection." 
+        });
+      }
+      
+      // Refresh token if expired
+      const isExpired = trueLayerItem.consentExpiresAt && 
+        new Date(trueLayerItem.consentExpiresAt) < new Date();
+      
+      if (isExpired && trueLayerItem.refreshTokenEncrypted) {
+        try {
+          const refreshToken = decryptToken(trueLayerItem.refreshTokenEncrypted);
+          const newTokens = await refreshAccessToken(refreshToken);
+          accessToken = newTokens.access_token;
+          
+          await storage.updateTrueLayerItem(trueLayerItem.id, {
+            accessTokenEncrypted: encryptToken(newTokens.access_token),
+            refreshTokenEncrypted: newTokens.refresh_token 
+              ? encryptToken(newTokens.refresh_token) 
+              : trueLayerItem.refreshTokenEncrypted,
+            consentExpiresAt: new Date(Date.now() + newTokens.expires_in * 1000),
+          });
+        } catch (refreshError) {
+          return res.status(401).send({ 
+            message: "Bank connection expired. Please reconnect.",
+            needsReauth: true 
+          });
+        }
+      }
+      
+      // Create job
+      const jobId = randomUUID();
+      const job: EnrichmentJob = {
+        id: jobId,
+        userId,
+        status: "pending",
+        current: 0,
+        total: 0,
+        startTime: Date.now(),
+        subscribers: [],
+      };
+      enrichmentJobs.set(jobId, job);
+      
+      // Start enrichment in background
+      (async () => {
+        try {
+          // Fetch transactions
+          job.status = "extracting";
+          broadcastToSubscribers(job, {
+            type: "progress",
+            current: 0,
+            total: 0,
+            status: "extracting",
+            startTime: job.startTime,
+          });
+          
+          const days = 90;
+          const transactions = await fetchAllTransactions(accessToken, days);
+          const directDebits = await fetchAllDirectDebits(accessToken);
+          
+          job.total = transactions.length;
+          
+          console.log(`[Enrichment Job ${jobId}] Fetched ${transactions.length} transactions`);
+          
+          // Stream enrichment through Python
+          const streamResponse = await fetch("http://localhost:8000/enrich-transactions-stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              transactions: transactions.map(t => ({
+                transaction_id: t.transaction_id,
+                description: t.description,
+                amount: t.amount,
+                currency: t.currency || "GBP",
+                transaction_type: t.transaction_type,
+                transaction_category: t.transaction_category,
+                transaction_classification: t.transaction_classification,
+                timestamp: t.timestamp,
+              })),
+              user_id: userId,
+              analysis_months: Math.max(1, Math.round(days / 30)),
+            }),
+          });
+          
+          if (!streamResponse.ok) {
+            throw new Error("Enrichment service failed");
+          }
+          
+          const reader = streamResponse.body?.getReader();
+          const decoder = new TextDecoder();
+          
+          if (!reader) {
+            throw new Error("No response body from enrichment service");
+          }
+          
+          let buffer = "";
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+            
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const event = JSON.parse(line.slice(6));
+                  
+                  if (event.type === "progress") {
+                    job.current = event.current;
+                    job.total = event.total;
+                    job.status = event.status;
+                    broadcastToSubscribers(job, {
+                      type: "progress",
+                      current: event.current,
+                      total: event.total,
+                      status: event.status,
+                      startTime: job.startTime,
+                    });
+                  } else if (event.type === "complete") {
+                    job.status = "complete";
+                    job.result = {
+                      success: true,
+                      analysis: event.result.budget_analysis,
+                      enrichedTransactions: event.result.enriched_transactions,
+                      detectedDebts: event.result.detected_debts,
+                      transactionCount: transactions.length,
+                      directDebitCount: directDebits.length,
+                      isEnriched: true,
+                    };
+                    broadcastToSubscribers(job, {
+                      type: "complete",
+                      result: job.result,
+                    });
+                  } else if (event.type === "error") {
+                    job.status = "error";
+                    job.error = event.message;
+                    broadcastToSubscribers(job, {
+                      type: "error",
+                      message: event.message,
+                    });
+                  }
+                } catch (e) {
+                  // Ignore parse errors
+                }
+              }
+            }
+          }
+          
+          // Update TrueLayer sync time
+          await storage.updateTrueLayerItem(trueLayerItem.id, {
+            lastSyncedAt: new Date()
+          });
+          
+        } catch (error: any) {
+          console.error(`[Enrichment Job ${jobId}] Error:`, error);
+          job.status = "error";
+          job.error = error.message || "An error occurred during enrichment";
+          broadcastToSubscribers(job, {
+            type: "error",
+            message: job.error,
+          });
+        }
+      })();
+      
+      res.json({
+        success: true,
+        jobId,
+        message: "Enrichment job started",
+      });
+      
+    } catch (error: any) {
+      console.error("Error starting enrichment:", error);
+      res.status(500).send({ 
+        message: "Failed to start enrichment. Please try again." 
+      });
+    }
+  });
+
+  /**
+   * GET /api/budget/enrichment-stream/:jobId
+   * SSE endpoint for streaming enrichment progress
+   */
+  app.get("/api/budget/enrichment-stream/:jobId", requireAuth, (req, res) => {
+    const { jobId } = req.params;
+    const job = enrichmentJobs.get(jobId);
+    
+    if (!job) {
+      return res.status(404).send({ message: "Job not found" });
+    }
+    
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    
+    // Add subscriber
+    job.subscribers.push(res);
+    
+    // Send current state immediately
+    if (job.status === "complete" && job.result) {
+      res.write(`data: ${JSON.stringify({ type: "complete", result: job.result })}\n\n`);
+    } else if (job.status === "error") {
+      res.write(`data: ${JSON.stringify({ type: "error", message: job.error })}\n\n`);
+    } else {
+      res.write(`data: ${JSON.stringify({
+        type: "progress",
+        current: job.current,
+        total: job.total,
+        status: job.status,
+        startTime: job.startTime,
+      })}\n\n`);
+    }
+    
+    // Handle disconnect
+    req.on("close", () => {
+      const index = job.subscribers.indexOf(res);
+      if (index > -1) {
+        job.subscribers.splice(index, 1);
+      }
+      
+      // Clean up job after all subscribers disconnect (with delay)
+      if (job.subscribers.length === 0) {
+        setTimeout(() => {
+          if (job.subscribers.length === 0) {
+            enrichmentJobs.delete(jobId);
+          }
+        }, 60000); // Clean up after 1 minute
+      }
+    });
   });
 }
