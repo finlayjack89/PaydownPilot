@@ -3,12 +3,22 @@ import { useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DollarSign, TrendingUp, Wallet, CreditCard, ChevronRight, CheckCircle2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { DollarSign, TrendingUp, Wallet, CreditCard, ChevronRight, CheckCircle2, RefreshCw, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { IncreaseBudgetView } from "./increase-budget-view";
 import { useAuth } from "@/lib/auth-context";
+
+interface DetectedDebtPayment {
+  description: string;
+  amountCents: number;
+  type: string;
+  logoUrl?: string | null;
+  isRecurring?: boolean;
+  recurrenceFrequency?: string | null;
+}
 
 interface BudgetAnalysisData {
   averageMonthlyIncomeCents: number;
@@ -16,11 +26,7 @@ interface BudgetAnalysisData {
   variableEssentialsCents: number;
   discretionaryCents: number;
   safeToSpendCents: number;
-  detectedDebtPayments: Array<{
-    description: string;
-    amountCents: number;
-    type: string;
-  }>;
+  detectedDebtPayments: DetectedDebtPayment[];
   breakdown: {
     income: Array<{ description: string; amount: number; category?: string }>;
     fixedCosts: Array<{ description: string; amount: number; category?: string }>;
@@ -29,6 +35,7 @@ interface BudgetAnalysisData {
   };
   transactionCount: number;
   directDebitCount: number;
+  isEnriched?: boolean;
 }
 
 interface BudgetAnalysisViewProps {
@@ -188,16 +195,63 @@ export function BudgetAnalysisView({ open, onOpenChange, analysisData }: BudgetA
               <Card className="border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/20">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <CreditCard className="h-5 w-5 text-amber-500 mt-0.5" />
+                    <CreditCard className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="font-medium text-sm">Existing Debt Payments Detected</p>
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm">Existing Debt Payments Detected</p>
+                        {analysisData.isEnriched && (
+                          <Badge variant="secondary" className="text-xs">
+                            <Sparkles className="h-3 w-3 mr-1" />
+                            AI Enhanced
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1 mb-3">
                         We found {analysisData.detectedDebtPayments.length} existing credit card or loan payments 
-                        in your transaction history totalling {formatCurrency(
+                        totalling {formatCurrency(
                           analysisData.detectedDebtPayments.reduce((sum, p) => sum + p.amountCents, 0),
                           currency
                         )} per month.
                       </p>
+                      
+                      <div className="space-y-2">
+                        {analysisData.detectedDebtPayments.slice(0, 4).map((debt, index) => (
+                          <div 
+                            key={index} 
+                            className="flex items-center gap-3 p-2 bg-white dark:bg-background rounded-md border"
+                            data-testid={`debt-item-${index}`}
+                          >
+                            {debt.logoUrl ? (
+                              <img 
+                                src={debt.logoUrl} 
+                                alt={debt.description}
+                                className="w-8 h-8 rounded object-contain bg-white"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded bg-muted flex items-center justify-center">
+                                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{debt.description}</p>
+                              {debt.isRecurring && (
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <RefreshCw className="h-3 w-3" />
+                                  {debt.recurrenceFrequency || "Recurring"}
+                                </div>
+                              )}
+                            </div>
+                            <span className="font-mono text-sm font-medium">
+                              {formatCurrency(debt.amountCents, currency)}
+                            </span>
+                          </div>
+                        ))}
+                        {analysisData.detectedDebtPayments.length > 4 && (
+                          <p className="text-xs text-muted-foreground text-center">
+                            +{analysisData.detectedDebtPayments.length - 4} more debt payments
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>

@@ -1,5 +1,6 @@
 # enrichment_service.py - Ntropy Transaction Enrichment Service
 # Handles TrueLayer → Ntropy → Budget Classification pipeline
+# Version: 1.1 - With ntropy-sdk support
 
 import os
 import hashlib
@@ -9,15 +10,17 @@ from pydantic import BaseModel, Field
 # Ntropy SDK import
 NTROPY_AVAILABLE = False
 NtropySDK = None
-NtropyTransaction = None
+NtropyTransactionInput = None
 
 try:
-    from ntropy_sdk import SDK, Transaction
+    from ntropy_sdk import SDK
+    from ntropy_sdk.transactions import TransactionInput
     NtropySDK = SDK
-    NtropyTransaction = Transaction
+    NtropyTransactionInput = TransactionInput
     NTROPY_AVAILABLE = True
-except ImportError:
-    print("[EnrichmentService] Warning: ntropy-sdk not available, running in fallback mode")
+    print("[EnrichmentService] Ntropy SDK loaded successfully")
+except ImportError as e:
+    print(f"[EnrichmentService] Warning: ntropy-sdk not available ({e}), running in fallback mode")
 
 
 # ============== Pydantic Models for Type Safety ==============
@@ -104,16 +107,17 @@ class EnrichmentService:
     def normalize_truelayer_transaction(self, raw_tx: Dict[str, Any]) -> TrueLayerIngestModel:
         """
         Phase 1: Normalize raw TrueLayer transaction data
-        - Convert negative amounts to absolute values
-        - Derive entry type from amount sign or transaction_type
+        - Determine entry type from amount sign OR transaction_type field
+        - Normalize amounts to positive values
         - Truncate timestamps to date strings
         """
         # Extract amount and determine direction
         amount = raw_tx.get("amount", 0)
         
         # TrueLayer: positive = credit, negative = debit
-        # OR use transaction_type field
+        # OR use transaction_type field (normalize to uppercase for comparison)
         tx_type = raw_tx.get("transaction_type", "")
+        tx_type_upper = tx_type.upper() if isinstance(tx_type, str) else ""
         
         # Normalize amount to positive
         normalized_amount = abs(amount)
@@ -130,7 +134,7 @@ class EnrichmentService:
             description=raw_tx.get("description", ""),
             amount=normalized_amount,
             currency=raw_tx.get("currency", "GBP"),
-            transaction_type=tx_type,
+            transaction_type=tx_type_upper,  # Store normalized uppercase type
             transaction_category=raw_tx.get("transaction_category"),
             transaction_classification=raw_tx.get("transaction_classification", []),
             timestamp=date_str
@@ -139,6 +143,33 @@ class EnrichmentService:
     def _hash_user_id(self, user_id: str) -> str:
         """Create a hashed account holder ID for Ntropy recurrence detection"""
         return hashlib.sha256(user_id.encode()).hexdigest()[:32]
+    
+    def _determine_entry_type(self, norm_tx: TrueLayerIngestModel) -> str:
+        """
+        Determine if a transaction is incoming (income) or outgoing (expense).
+        
+        TrueLayer transaction_type values (after uppercase normalization):
+        - CREDIT: Money received
+        - DEBIT: Money spent  
+        - STANDING_ORDER: Recurring outgoing payment
+        - DIRECT_DEBIT: Recurring outgoing payment
+        - FEE: Outgoing fee
+        """
+        outgoing_types = {"DEBIT", "STANDING_ORDER", "DIRECT_DEBIT", "FEE"}
+        incoming_types = {"CREDIT"}
+        
+        # Check transaction_type first (more reliable)
+        if norm_tx.transaction_type in outgoing_types:
+            return "outgoing"
+        if norm_tx.transaction_type in incoming_types:
+            return "incoming"
+        
+        # Fallback to amount sign if transaction_type is unknown
+        # In TrueLayer raw data, negative = outgoing, positive = incoming
+        # But we normalize to absolute values, so check the original amount in raw_tx
+        # Since we don't have access to raw_tx here, assume unknown types with any amount are outgoing
+        # unless explicitly marked as credit
+        return "outgoing"
     
     def classify_transaction(
         self,
@@ -201,34 +232,56 @@ class EnrichmentService:
         ]
         
         # Phase 2: Enrich with Ntropy (if available)
-        if self.sdk and NTROPY_AVAILABLE and NtropyTransaction:
+        if self.sdk and NTROPY_AVAILABLE and NtropyTransactionInput:
             try:
-                # Prepare batch for Ntropy using Transaction class
+                # Prepare batch for Ntropy using TransactionInput class
                 ntropy_inputs = []
                 for norm_tx in normalized:
-                    entry_type = "outgoing" if norm_tx.transaction_type == "DEBIT" or norm_tx.amount < 0 else "incoming"
-                    ntropy_inputs.append(NtropyTransaction(
-                        transaction_id=norm_tx.transaction_id,
+                    entry_type = self._determine_entry_type(norm_tx)
+                    ntropy_inputs.append(NtropyTransactionInput(
+                        id=norm_tx.transaction_id,
                         description=norm_tx.description,
                         amount=norm_tx.amount,
                         entry_type=entry_type,
-                        iso_currency_code=norm_tx.currency,
+                        currency=norm_tx.currency,
                         date=norm_tx.timestamp,
                         account_holder_id=self._hash_user_id(user_id),
                         account_holder_type="consumer",
-                        country="GB"  # UK transactions
+                        location={"country": "GB"}  # UK transactions
                     ))
                 
-                # Call Ntropy SDK for batch enrichment
+                # Call Ntropy SDK for batch enrichment using the transactions.create method
                 print(f"[EnrichmentService] Enriching {len(ntropy_inputs)} transactions with Ntropy...")
-                enriched_batch = self.sdk.add_transactions(ntropy_inputs)
+                
+                # Process each transaction individually (or use batch if available)
+                enriched_batch = []
+                for tx_input in ntropy_inputs:
+                    try:
+                        enriched_tx = self.sdk.transactions.create(
+                            id=tx_input.id,
+                            description=tx_input.description,
+                            amount=tx_input.amount,
+                            entry_type=tx_input.entry_type,
+                            currency=tx_input.currency,
+                            date=tx_input.date,
+                            account_holder_id=tx_input.account_holder_id,
+                        )
+                        enriched_batch.append(enriched_tx)
+                    except Exception as tx_err:
+                        print(f"[EnrichmentService] Error enriching transaction {tx_input.id}: {tx_err}")
+                        enriched_batch.append(None)
                 
                 # Process enriched results
                 for i, enriched in enumerate(enriched_batch):
                     norm_tx = normalized[i]
                     
+                    # Skip if enrichment failed for this transaction
+                    if enriched is None:
+                        results.append(self._create_fallback_output(norm_tx))
+                        continue
+                    
                     # Extract Ntropy fields safely
-                    enriched_dict = enriched.to_dict() if hasattr(enriched, 'to_dict') else {}
+                    enriched_dict = enriched.model_dump() if hasattr(enriched, 'model_dump') else {}
                     
                     labels = enriched_dict.get('labels', []) or []
                     merchant = enriched_dict.get('merchant', {}) or {}
@@ -242,7 +295,7 @@ class EnrichmentService:
                     recurrence_freq = recurrence.get('frequency')
                     recurrence_day = recurrence.get('day_of_month')
                     
-                    entry_type = "incoming" if norm_tx.amount > 0 and norm_tx.transaction_type != "DEBIT" else "outgoing"
+                    entry_type = self._determine_entry_type(norm_tx)
                     
                     # Phase 3: Classify
                     budget_category = self.classify_transaction(
@@ -280,6 +333,33 @@ class EnrichmentService:
         
         return results
     
+    def _create_fallback_output(self, norm_tx: TrueLayerIngestModel) -> NtropyOutputModel:
+        """Create a fallback output for a single transaction when Ntropy enrichment fails"""
+        labels = norm_tx.transaction_classification or []
+        desc_lower = norm_tx.description.lower()
+        is_recurring = any(kw in desc_lower for kw in [
+            'dd ', 'direct debit', 'standing order', 's/o',
+            'subscription', 'monthly', 'recurring'
+        ])
+        entry_type = self._determine_entry_type(norm_tx)
+        budget_category = self._classify_by_keywords(desc_lower, labels, is_recurring, entry_type)
+        
+        return NtropyOutputModel(
+            transaction_id=norm_tx.transaction_id,
+            original_description=norm_tx.description,
+            merchant_clean_name=None,
+            merchant_logo_url=None,
+            merchant_website_url=None,
+            labels=labels,
+            is_recurring=is_recurring,
+            recurrence_frequency="monthly" if is_recurring else None,
+            recurrence_day=None,
+            amount_cents=int(norm_tx.amount * 100),
+            entry_type=entry_type,
+            budget_category=budget_category,
+            transaction_date=norm_tx.timestamp
+        )
+    
     def _fallback_classification(
         self,
         normalized_transactions: List[TrueLayerIngestModel]
@@ -303,7 +383,7 @@ class EnrichmentService:
                 'subscription', 'monthly', 'recurring'
             ])
             
-            entry_type = "incoming" if norm_tx.amount > 0 and norm_tx.transaction_type != "DEBIT" else "outgoing"
+            entry_type = self._determine_entry_type(norm_tx)
             
             # Enhanced classification using description keywords
             budget_category = self._classify_by_keywords(desc_lower, labels, is_recurring, entry_type)
