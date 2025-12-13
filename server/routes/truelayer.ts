@@ -47,7 +47,9 @@ export function registerTrueLayerRoutes(app: Express) {
         });
       }
 
-      const state = Buffer.from(JSON.stringify({ userId })).toString("base64");
+      // Include return URL in state for proper redirect after OAuth
+      const returnUrl = req.query.returnUrl as string || "/budget";
+      const state = Buffer.from(JSON.stringify({ userId, returnUrl })).toString("base64");
       const authUrl = generateAuthUrl(REDIRECT_URI, state);
 
       console.log("[TrueLayer] Generated auth URL successfully, redirect URI:", REDIRECT_URI);
@@ -77,10 +79,12 @@ export function registerTrueLayerRoutes(app: Express) {
       }
 
       let userId: string | null = null;
+      let returnUrl: string = "/budget";
       if (state && typeof state === "string") {
         try {
           const decoded = JSON.parse(Buffer.from(state, "base64").toString());
           userId = decoded.userId;
+          returnUrl = decoded.returnUrl || "/budget";
         } catch (e) {
           console.error("[TrueLayer] Failed to decode state:", e);
         }
@@ -177,10 +181,10 @@ export function registerTrueLayerRoutes(app: Express) {
 
       console.log(`[TrueLayer] Callback complete for user ${userId}: ${newAccountsCreated} new, ${existingAccountsUpdated} updated`);
 
-      res.redirect("/budget?connected=true");
+      res.redirect(`${returnUrl}?connected=true`);
     } catch (error: any) {
       console.error("[TrueLayer] Callback error:", error);
-      res.redirect(`/budget?error=${encodeURIComponent(error.message)}`);
+      res.redirect(`${returnUrl}?error=${encodeURIComponent(error.message)}`);
     }
   });
 

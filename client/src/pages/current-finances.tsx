@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { RefreshCw, Wallet, Building2, TrendingUp, TrendingDown, PiggyBank, AlertCircle } from "lucide-react";
+import { RefreshCw, Wallet, Building2, TrendingUp, TrendingDown, PiggyBank, AlertCircle, Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 import { ConnectedAccountTile } from "@/components/connected-account-tile";
+import { EnrichmentProgressModal } from "@/components/enrichment-progress-modal";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -64,7 +66,116 @@ interface CombinedFinancesResponse {
 export default function CurrentFinances() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [refreshingAccountId, setRefreshingAccountId] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [showEnrichmentModal, setShowEnrichmentModal] = useState(false);
+  const [enrichmentJobId, setEnrichmentJobId] = useState<string | null>(null);
+
+  // Handle OAuth callback - check for ?connected=true in URL
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    if (params.get("connected") === "true") {
+      // Clear URL params
+      setLocation("/current-finances", { replace: true });
+      // Start enrichment process
+      startEnrichmentAfterConnection();
+    } else if (params.get("error")) {
+      const error = params.get("error");
+      setLocation("/current-finances", { replace: true });
+      setIsConnecting(false);
+      toast({
+        title: "Connection Failed",
+        description: error || "Failed to connect bank account",
+        variant: "destructive",
+      });
+    }
+  }, [searchString]);
+
+  const startEnrichmentAfterConnection = async () => {
+    try {
+      const response = await apiRequest("POST", "/api/budget/start-enrichment", { forceRefresh: true });
+      const data = await response.json();
+      
+      if (data.cached) {
+        // Cached enrichment exists - just refresh queries
+        queryClient.invalidateQueries({ queryKey: ["/api/current-finances/combined"] });
+        toast({ title: "Analysis ready", description: "Using cached transaction analysis." });
+        return;
+      }
+      
+      if (data.jobId) {
+        // Start enrichment with progress modal
+        setEnrichmentJobId(data.jobId);
+        setShowEnrichmentModal(true);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Enrichment Failed",
+        description: error.message || "Failed to analyze transactions",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleConnectBank = async () => {
+    if (user?.id === "guest-user") {
+      toast({
+        title: "Account Required",
+        description: "Please create an account to connect your bank.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsConnecting(true);
+    try {
+      const response = await fetch("/api/truelayer/auth-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ returnUrl: "/current-finances" })
+      });
+      if (!response.ok) throw new Error("Failed to get auth URL");
+      const data = await response.json();
+      window.location.href = data.authUrl;
+    } catch (error) {
+      console.error("Connect bank error:", error);
+      setIsConnecting(false);
+      toast({ title: "Connection failed", description: "Could not start bank connection.", variant: "destructive" });
+    }
+  };
+
+  const handleEnrichmentComplete = (result: any) => {
+    setShowEnrichmentModal(false);
+    setEnrichmentJobId(null);
+    queryClient.invalidateQueries({ queryKey: ["/api/current-finances/combined"] });
+    toast({
+      title: "Analysis Complete",
+      description: "Your transactions have been analyzed successfully.",
+    });
+  };
+
+  const handleEnrichmentError = (error: string) => {
+    setShowEnrichmentModal(false);
+    setEnrichmentJobId(null);
+    toast({
+      title: "Analysis Failed",
+      description: error || "Failed to analyze transactions",
+      variant: "destructive",
+    });
+  };
+
+  const handleCancelEnrichment = async () => {
+    if (enrichmentJobId) {
+      try {
+        await apiRequest("POST", `/api/budget/cancel-enrichment/${enrichmentJobId}`);
+      } catch (e) {
+        // Ignore cancel errors
+      }
+    }
+  };
 
   const { data, isLoading, refetch } = useQuery<CombinedFinancesResponse>({
     queryKey: ["/api/current-finances/combined"],
@@ -243,12 +354,22 @@ export default function CurrentFinances() {
             </CardHeader>
             <CardContent>
               <Button
-                onClick={() => window.location.href = "/budget-finder"}
+                onClick={handleConnectBank}
+                disabled={isConnecting}
                 className="h-12 px-8"
                 data-testid="button-connect-bank"
               >
-                <Building2 className="mr-2 h-4 w-4" />
-                Connect Your Bank
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Building2 className="mr-2 h-4 w-4" />
+                    Connect Your Bank
+                  </>
+                )}
               </Button>
             </CardContent>
           </Card>
@@ -306,6 +427,16 @@ export default function CurrentFinances() {
           </Card>
         )}
       </main>
+
+      {/* Enrichment Progress Modal */}
+      <EnrichmentProgressModal
+        open={showEnrichmentModal}
+        onOpenChange={setShowEnrichmentModal}
+        jobId={enrichmentJobId}
+        onComplete={handleEnrichmentComplete}
+        onError={handleEnrichmentError}
+        onCancel={handleCancelEnrichment}
+      />
     </div>
   );
 }

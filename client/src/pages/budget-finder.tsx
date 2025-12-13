@@ -1,32 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ArrowLeft, Loader2, TrendingUp, Wallet, DollarSign, AlertTriangle, CheckCircle2, PiggyBank, Building2 } from "lucide-react";
-import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth-context";
+import { EnrichmentProgressModal } from "@/components/enrichment-progress-modal";
 import type { BudgetAnalysisResponse } from "@shared/schema";
-
-interface PersonaInfo {
-  id: string;
-  transactionCount: number;
-  directDebitCount: number;
-}
-
-const PERSONA_LABELS: Record<string, { name: string; description: string }> = {
-  "user_001": { name: "High Earner", description: "London - High salary, high rent, active credit card user" },
-  "user_002": { name: "Family Budget", description: "Mortgage, Council Tax, weekly grocery shops" },
-  "user_003": { name: "Gig Worker", description: "Irregular income, low fixed costs, high variable spend" },
-  "user_004": { name: "Debt Heavy", description: "High debt repayments, overdraft fees" },
-  "user_005": { name: "New Account", description: "Edge case - minimal transaction data" },
-};
 
 function formatMoney(cents: number): string {
   return new Intl.NumberFormat("en-GB", {
@@ -37,33 +23,152 @@ function formatMoney(cents: number): string {
 
 export default function BudgetFinder() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const { toast } = useToast();
   const { user } = useAuth();
-  const [selectedPersona, setSelectedPersona] = useState<string>("");
   const [analysisResult, setAnalysisResult] = useState<BudgetAnalysisResponse | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showEnrichmentModal, setShowEnrichmentModal] = useState(false);
+  const [enrichmentJobId, setEnrichmentJobId] = useState<string | null>(null);
 
-  const { data: personasData } = useQuery<{ success: boolean; personas: PersonaInfo[] }>({
-    queryKey: ["/api/budget/personas"],
+  // Check TrueLayer connection status
+  const { data: connectionStatus } = useQuery<{ connected: boolean; accounts: any[] }>({
+    queryKey: ["/api/truelayer/status"],
   });
 
-  const analyzeMutation = useMutation({
-    mutationFn: async (personaId: string) => {
-      return await apiRequest("POST", "/api/budget/analyze", { personaId });
-    },
-    onSuccess: (data: any) => {
-      setAnalysisResult(data.analysis);
-      setIsConnecting(false);
-    },
-    onError: (error: any) => {
-      setIsConnecting(false);
+  // Handle OAuth callback - check for ?connected=true in URL
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    if (params.get("connected") === "true") {
+      setLocation("/budget-finder", { replace: true });
+      startEnrichmentAfterConnection();
+    } else if (params.get("error")) {
+      const error = params.get("error");
+      setLocation("/budget-finder", { replace: true });
       toast({
-        title: "Analysis Failed",
+        title: "Connection Failed",
+        description: error || "Failed to connect bank account",
+        variant: "destructive",
+      });
+    }
+  }, [searchString]);
+
+  const startEnrichmentAfterConnection = async () => {
+    try {
+      const response = await apiRequest("POST", "/api/budget/start-enrichment", { forceRefresh: true });
+      const data = await response.json();
+      
+      if (data.cached) {
+        // Use cached data
+        setAnalysisResult({
+          averageMonthlyIncomeCents: data.result.analysis.averageMonthlyIncomeCents,
+          fixedCostsCents: data.result.analysis.fixedCostsCents,
+          variableEssentialsCents: data.result.analysis.variableEssentialsCents || 0,
+          discretionaryCents: data.result.analysis.discretionaryCents,
+          safeToSpendCents: data.result.analysis.safeToSpendCents,
+          detectedDebtPayments: data.result.detectedDebts?.map((d: any) => ({
+            description: d.merchant_name || d.description,
+            amountCents: d.amount_cents,
+            type: "debt",
+          })) || [],
+          breakdown: data.result.analysis.breakdown || {},
+          analysisMonths: 1,
+        });
+        toast({
+          title: "Analysis Complete",
+          description: "Your budget has been calculated from your transaction history.",
+        });
+      } else if (data.jobId) {
+        setEnrichmentJobId(data.jobId);
+        setShowEnrichmentModal(true);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Enrichment Failed",
         description: error.message || "Failed to analyze transactions",
         variant: "destructive",
       });
-    },
-  });
+    }
+  };
+
+  const handleConnectBank = async () => {
+    if (user?.id === "guest-user") {
+      toast({
+        title: "Account Required",
+        description: "Please create an account to connect your bank.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsConnecting(true);
+    try {
+      const response = await fetch(`/api/truelayer/auth-url?returnUrl=${encodeURIComponent("/budget-finder")}`, {
+        credentials: "include",
+      });
+      const data = await response.json();
+      
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        throw new Error(data.message || "Failed to get authentication URL");
+      }
+    } catch (error: any) {
+      setIsConnecting(false);
+      toast({
+        title: "Connection Failed",
+        description: error.message || "Failed to initiate bank connection",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEnrichmentComplete = (result: any) => {
+    setShowEnrichmentModal(false);
+    setEnrichmentJobId(null);
+    
+    if (result?.analysis) {
+      setAnalysisResult({
+        averageMonthlyIncomeCents: result.analysis.averageMonthlyIncomeCents,
+        fixedCostsCents: result.analysis.fixedCostsCents,
+        variableEssentialsCents: result.analysis.variableEssentialsCents || 0,
+        discretionaryCents: result.analysis.discretionaryCents,
+        safeToSpendCents: result.analysis.safeToSpendCents,
+        detectedDebtPayments: result.detectedDebts?.map((d: any) => ({
+          description: d.merchant_name || d.description,
+          amountCents: d.amount_cents,
+          type: "debt",
+        })) || [],
+        breakdown: result.analysis.breakdown || {},
+        analysisMonths: 1,
+      });
+    }
+    
+    toast({
+      title: "Analysis Complete",
+      description: "Your budget has been calculated successfully.",
+    });
+  };
+
+  const handleEnrichmentError = (error: string) => {
+    setShowEnrichmentModal(false);
+    setEnrichmentJobId(null);
+    toast({
+      title: "Analysis Failed",
+      description: error || "Failed to analyze transactions",
+      variant: "destructive",
+    });
+  };
+
+  const handleCancelEnrichment = async () => {
+    if (enrichmentJobId) {
+      try {
+        await apiRequest("POST", `/api/budget/cancel-enrichment/${enrichmentJobId}`);
+      } catch (e) {
+        // Ignore cancel errors
+      }
+    }
+  };
 
   const applyBudgetMutation = useMutation({
     mutationFn: async (safeToSpendCents: number) => {
@@ -87,21 +192,6 @@ export default function BudgetFinder() {
     },
   });
 
-  const handleConnect = () => {
-    if (!selectedPersona) {
-      toast({
-        title: "Select a Persona",
-        description: "Please select a test persona to simulate bank connection",
-        variant: "destructive",
-      });
-      return;
-    }
-    setIsConnecting(true);
-    setTimeout(() => {
-      analyzeMutation.mutate(selectedPersona);
-    }, 1500);
-  };
-
   const handleApplyBudget = () => {
     if (analysisResult) {
       applyBudgetMutation.mutate(analysisResult.safeToSpendCents);
@@ -115,6 +205,8 @@ export default function BudgetFinder() {
   const incomePercentUsed = analysisResult && analysisResult.averageMonthlyIncomeCents > 0
     ? Math.round((totalOutgoings / analysisResult.averageMonthlyIncomeCents) * 100)
     : 0;
+
+  const hasExistingConnection = connectionStatus?.connected && connectionStatus.accounts.length > 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -146,55 +238,49 @@ export default function BudgetFinder() {
             <CardHeader>
               <CardTitle>Connect Your Bank</CardTitle>
               <CardDescription>
-                We'll analyze 6 months of transactions to calculate how much you can safely allocate to debt payments
+                We'll analyze your transactions to calculate how much you can safely allocate to debt payments
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="p-4 bg-muted rounded-lg border space-y-3">
-                <p className="text-sm font-medium">Demo Mode - Select a Test Persona</p>
-                <p className="text-xs text-muted-foreground">
-                  This simulates TrueLayer bank connection with synthetic data for testing
-                </p>
-                <Select value={selectedPersona} onValueChange={setSelectedPersona}>
-                  <SelectTrigger data-testid="select-persona">
-                    <SelectValue placeholder="Select a test persona..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {personasData?.personas.map((persona) => (
-                      <SelectItem key={persona.id} value={persona.id} data-testid={`persona-${persona.id}`}>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{PERSONA_LABELS[persona.id]?.name || persona.id}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {PERSONA_LABELS[persona.id]?.description}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {hasExistingConnection && (
+                <div className="p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                    <CheckCircle2 className="h-5 w-5" />
+                    <span className="font-medium">Bank account already connected</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    You have {connectionStatus.accounts.length} account{connectionStatus.accounts.length !== 1 ? "s" : ""} connected. 
+                    Click below to analyze your transactions.
+                  </p>
+                </div>
+              )}
 
               <Button
                 className="w-full h-12"
-                onClick={handleConnect}
-                disabled={isConnecting || analyzeMutation.isPending}
+                onClick={hasExistingConnection ? startEnrichmentAfterConnection : handleConnectBank}
+                disabled={isConnecting}
                 data-testid="button-connect-bank"
               >
-                {isConnecting || analyzeMutation.isPending ? (
+                {isConnecting ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Analyzing 6 months of data...
+                    Connecting...
+                  </>
+                ) : hasExistingConnection ? (
+                  <>
+                    <TrendingUp className="mr-2 h-5 w-5" />
+                    Analyze My Transactions
                   </>
                 ) : (
                   <>
                     <Building2 className="mr-2 h-5 w-5" />
-                    Connect Bank (Simulated)
+                    Connect Bank via Open Banking
                   </>
                 )}
               </Button>
 
               <p className="text-xs text-muted-foreground text-center">
-                Your transaction data is analyzed locally and never stored
+                Your transaction data is securely processed and never shared with third parties
               </p>
             </CardContent>
           </Card>
@@ -209,7 +295,7 @@ export default function BudgetFinder() {
                   <div>
                     <h3 className="text-xl font-bold">Analysis Complete</h3>
                     <p className="text-sm text-muted-foreground">
-                      Based on {analysisResult.analysisMonths} month(s) of transaction history
+                      Based on your transaction history
                     </p>
                   </div>
                 </div>
@@ -311,7 +397,6 @@ export default function BudgetFinder() {
                 className="flex-1"
                 onClick={() => {
                   setAnalysisResult(null);
-                  setSelectedPersona("");
                 }}
                 data-testid="button-analyze-again"
               >
@@ -340,6 +425,16 @@ export default function BudgetFinder() {
           </div>
         )}
       </main>
+
+      {/* Enrichment Progress Modal */}
+      <EnrichmentProgressModal
+        open={showEnrichmentModal}
+        onOpenChange={setShowEnrichmentModal}
+        jobId={enrichmentJobId}
+        onComplete={handleEnrichmentComplete}
+        onError={handleEnrichmentError}
+        onCancel={handleCancelEnrichment}
+      />
     </div>
   );
 }

@@ -6,9 +6,9 @@ const TRUELAYER_CLIENT_SECRET = process.env.TRUELAYER_CLIENT_SECRET;
 // Environment detection for sandbox vs production
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-// Force sandbox mode for testing with Mock Bank
-// TODO: Set USE_TRUELAYER_SANDBOX=false when ready to go live with real banks
-const USE_SANDBOX = process.env.USE_TRUELAYER_SANDBOX !== "false";
+// Production mode - use real TrueLayer endpoints
+// Set USE_TRUELAYER_SANDBOX=true in environment to test with Mock Bank
+const USE_SANDBOX = process.env.USE_TRUELAYER_SANDBOX === "true";
 
 // TrueLayer endpoints - using sandbox for Mock Bank testing
 const AUTH_URL = USE_SANDBOX 
@@ -18,9 +18,7 @@ const API_URL = USE_SANDBOX
   ? "https://api.truelayer-sandbox.com" 
   : "https://api.truelayer.com";
 
-// Provider selection - using mock bank for testing, real UK banks for production
-// uk-cs-mock is the correct provider ID for TrueLayer Data API sandbox
-// TODO: Set USE_TRUELAYER_SANDBOX=false when ready to go live with real banks
+// Provider selection - real UK banks for production, mock bank for sandbox testing
 const PROVIDERS = USE_SANDBOX ? "uk-cs-mock" : "uk-ob-all uk-oauth-all";
 
 export interface TrueLayerTokenResponse {
