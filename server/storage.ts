@@ -59,18 +59,26 @@ export interface IStorage {
   getLenderRule(lenderName: string, country: string): Promise<LenderRule | undefined>;
   createLenderRule(rule: InsertLenderRule): Promise<LenderRule>;
   
-  // TrueLayer Item methods
-  getTrueLayerItemByUserId(userId: string): Promise<TrueLayerItem | undefined>;
+  // TrueLayer Item methods (multi-account support)
+  getTrueLayerItemByUserId(userId: string): Promise<TrueLayerItem | undefined>; // Legacy: returns first item
+  getTrueLayerItemsByUserId(userId: string): Promise<TrueLayerItem[]>; // NEW: returns all accounts
+  getTrueLayerItemById(id: string): Promise<TrueLayerItem | undefined>; // NEW: get specific account
+  getTrueLayerItemByAccountId(userId: string, trueLayerAccountId: string): Promise<TrueLayerItem | undefined>; // NEW: find by TL account ID
   createTrueLayerItem(item: InsertTrueLayerItem): Promise<TrueLayerItem>;
   updateTrueLayerItem(id: string, updates: Partial<TrueLayerItem>): Promise<TrueLayerItem | undefined>;
-  deleteTrueLayerItem(userId: string): Promise<void>;
+  deleteTrueLayerItem(userId: string): Promise<void>; // Legacy: deletes all
+  deleteTrueLayerItemById(id: string): Promise<void>; // NEW: delete specific account
   
-  // Enriched Transactions methods
+  // Enriched Transactions methods (multi-account support)
   getEnrichedTransactionsByUserId(userId: string): Promise<EnrichedTransaction[]>;
+  getEnrichedTransactionsByItemId(trueLayerItemId: string): Promise<EnrichedTransaction[]>; // NEW: per-account
   getEnrichedTransactionsCount(userId: string): Promise<number>;
+  getEnrichedTransactionsCountByItemId(trueLayerItemId: string): Promise<number>; // NEW: per-account
   hasRecentEnrichedTransactions(userId: string, maxAgeHours?: number): Promise<boolean>;
+  hasRecentEnrichedTransactionsByItemId(trueLayerItemId: string, maxAgeHours?: number): Promise<boolean>; // NEW: per-account
   saveEnrichedTransactions(transactions: InsertEnrichedTransaction[]): Promise<void>;
   deleteEnrichedTransactionsByUserId(userId: string): Promise<void>;
+  deleteEnrichedTransactionsByItemId(trueLayerItemId: string): Promise<void>; // NEW: per-account
 }
 
 type BucketInput = Omit<InsertDebtBucket, 'accountId'>;
@@ -264,9 +272,26 @@ export class DatabaseStorage implements IStorage {
     return newRule;
   }
   
-  // TrueLayer Item methods
+  // TrueLayer Item methods (multi-account support)
   async getTrueLayerItemByUserId(userId: string): Promise<TrueLayerItem | undefined> {
+    // Legacy: returns first item for backwards compatibility
     const [item] = await db.select().from(trueLayerItems).where(eq(trueLayerItems.userId, userId));
+    return item || undefined;
+  }
+  
+  async getTrueLayerItemsByUserId(userId: string): Promise<TrueLayerItem[]> {
+    return await db.select().from(trueLayerItems).where(eq(trueLayerItems.userId, userId));
+  }
+  
+  async getTrueLayerItemById(id: string): Promise<TrueLayerItem | undefined> {
+    const [item] = await db.select().from(trueLayerItems).where(eq(trueLayerItems.id, id));
+    return item || undefined;
+  }
+  
+  async getTrueLayerItemByAccountId(userId: string, trueLayerAccountId: string): Promise<TrueLayerItem | undefined> {
+    const [item] = await db.select().from(trueLayerItems).where(
+      and(eq(trueLayerItems.userId, userId), eq(trueLayerItems.trueLayerAccountId, trueLayerAccountId))
+    );
     return item || undefined;
   }
   
@@ -281,16 +306,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteTrueLayerItem(userId: string): Promise<void> {
+    // Legacy: deletes all items for user
     await db.delete(trueLayerItems).where(eq(trueLayerItems.userId, userId));
   }
   
-  // Enriched Transactions methods
+  async deleteTrueLayerItemById(id: string): Promise<void> {
+    await db.delete(trueLayerItems).where(eq(trueLayerItems.id, id));
+  }
+  
+  // Enriched Transactions methods (multi-account support)
   async getEnrichedTransactionsByUserId(userId: string): Promise<EnrichedTransaction[]> {
     return await db.select().from(enrichedTransactions).where(eq(enrichedTransactions.userId, userId));
   }
   
+  async getEnrichedTransactionsByItemId(trueLayerItemId: string): Promise<EnrichedTransaction[]> {
+    return await db.select().from(enrichedTransactions).where(eq(enrichedTransactions.trueLayerItemId, trueLayerItemId));
+  }
+  
   async getEnrichedTransactionsCount(userId: string): Promise<number> {
     const transactions = await db.select().from(enrichedTransactions).where(eq(enrichedTransactions.userId, userId));
+    return transactions.length;
+  }
+  
+  async getEnrichedTransactionsCountByItemId(trueLayerItemId: string): Promise<number> {
+    const transactions = await db.select().from(enrichedTransactions).where(eq(enrichedTransactions.trueLayerItemId, trueLayerItemId));
     return transactions.length;
   }
   
@@ -308,6 +347,20 @@ export class DatabaseStorage implements IStorage {
     return !!transaction;
   }
   
+  async hasRecentEnrichedTransactionsByItemId(trueLayerItemId: string, maxAgeHours: number = 24): Promise<boolean> {
+    const cutoffDate = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+    const [transaction] = await db.select()
+      .from(enrichedTransactions)
+      .where(
+        and(
+          eq(enrichedTransactions.trueLayerItemId, trueLayerItemId),
+          gte(enrichedTransactions.createdAt, cutoffDate)
+        )
+      )
+      .limit(1);
+    return !!transaction;
+  }
+  
   async saveEnrichedTransactions(transactions: InsertEnrichedTransaction[]): Promise<void> {
     if (transactions.length === 0) return;
     
@@ -318,6 +371,7 @@ export class DatabaseStorage implements IStorage {
         .onConflictDoUpdate({
           target: [enrichedTransactions.userId, enrichedTransactions.trueLayerTransactionId],
           set: {
+            trueLayerItemId: tx.trueLayerItemId,
             ntropyTransactionId: tx.ntropyTransactionId,
             merchantCleanName: tx.merchantCleanName,
             merchantLogoUrl: tx.merchantLogoUrl,
@@ -335,6 +389,10 @@ export class DatabaseStorage implements IStorage {
   
   async deleteEnrichedTransactionsByUserId(userId: string): Promise<void> {
     await db.delete(enrichedTransactions).where(eq(enrichedTransactions.userId, userId));
+  }
+  
+  async deleteEnrichedTransactionsByItemId(trueLayerItemId: string): Promise<void> {
+    await db.delete(enrichedTransactions).where(eq(enrichedTransactions.trueLayerItemId, trueLayerItemId));
   }
 }
 
@@ -642,15 +700,25 @@ class GuestStorageWrapper implements IStorage {
   
   // TrueLayer Items - pass through to database (not guest specific)
   async getTrueLayerItemByUserId(userId: string): Promise<TrueLayerItem | undefined> {
-    // Guest users don't have TrueLayer items
-    if (this.isGuest(userId)) {
-      return undefined;
-    }
+    if (this.isGuest(userId)) return undefined;
     return this.dbStorage.getTrueLayerItemByUserId(userId);
   }
   
+  async getTrueLayerItemsByUserId(userId: string): Promise<TrueLayerItem[]> {
+    if (this.isGuest(userId)) return [];
+    return this.dbStorage.getTrueLayerItemsByUserId(userId);
+  }
+  
+  async getTrueLayerItemById(id: string): Promise<TrueLayerItem | undefined> {
+    return this.dbStorage.getTrueLayerItemById(id);
+  }
+  
+  async getTrueLayerItemByAccountId(userId: string, trueLayerAccountId: string): Promise<TrueLayerItem | undefined> {
+    if (this.isGuest(userId)) return undefined;
+    return this.dbStorage.getTrueLayerItemByAccountId(userId, trueLayerAccountId);
+  }
+  
   async createTrueLayerItem(item: InsertTrueLayerItem): Promise<TrueLayerItem> {
-    // Guest users can't create TrueLayer items
     if (this.isGuest(item.userId)) {
       throw new Error("Guest users cannot connect bank accounts");
     }
@@ -662,46 +730,55 @@ class GuestStorageWrapper implements IStorage {
   }
 
   async deleteTrueLayerItem(userId: string): Promise<void> {
-    if (this.isGuest(userId)) {
-      return;
-    }
+    if (this.isGuest(userId)) return;
     return this.dbStorage.deleteTrueLayerItem(userId);
+  }
+  
+  async deleteTrueLayerItemById(id: string): Promise<void> {
+    return this.dbStorage.deleteTrueLayerItemById(id);
   }
   
   // Enriched Transactions methods - pass through to database (guest users can't use this)
   async getEnrichedTransactionsByUserId(userId: string): Promise<EnrichedTransaction[]> {
-    if (this.isGuest(userId)) {
-      return [];
-    }
+    if (this.isGuest(userId)) return [];
     return this.dbStorage.getEnrichedTransactionsByUserId(userId);
   }
   
+  async getEnrichedTransactionsByItemId(trueLayerItemId: string): Promise<EnrichedTransaction[]> {
+    return this.dbStorage.getEnrichedTransactionsByItemId(trueLayerItemId);
+  }
+  
   async getEnrichedTransactionsCount(userId: string): Promise<number> {
-    if (this.isGuest(userId)) {
-      return 0;
-    }
+    if (this.isGuest(userId)) return 0;
     return this.dbStorage.getEnrichedTransactionsCount(userId);
   }
   
+  async getEnrichedTransactionsCountByItemId(trueLayerItemId: string): Promise<number> {
+    return this.dbStorage.getEnrichedTransactionsCountByItemId(trueLayerItemId);
+  }
+  
   async hasRecentEnrichedTransactions(userId: string, maxAgeHours?: number): Promise<boolean> {
-    if (this.isGuest(userId)) {
-      return false;
-    }
+    if (this.isGuest(userId)) return false;
     return this.dbStorage.hasRecentEnrichedTransactions(userId, maxAgeHours);
   }
   
+  async hasRecentEnrichedTransactionsByItemId(trueLayerItemId: string, maxAgeHours?: number): Promise<boolean> {
+    return this.dbStorage.hasRecentEnrichedTransactionsByItemId(trueLayerItemId, maxAgeHours);
+  }
+  
   async saveEnrichedTransactions(transactions: InsertEnrichedTransaction[]): Promise<void> {
-    // Filter out any guest user transactions (shouldn't happen but just in case)
     const validTransactions = transactions.filter(tx => !this.isGuest(tx.userId));
     if (validTransactions.length === 0) return;
     return this.dbStorage.saveEnrichedTransactions(validTransactions);
   }
   
   async deleteEnrichedTransactionsByUserId(userId: string): Promise<void> {
-    if (this.isGuest(userId)) {
-      return;
-    }
+    if (this.isGuest(userId)) return;
     return this.dbStorage.deleteEnrichedTransactionsByUserId(userId);
+  }
+  
+  async deleteEnrichedTransactionsByItemId(trueLayerItemId: string): Promise<void> {
+    return this.dbStorage.deleteEnrichedTransactionsByItemId(trueLayerItemId);
   }
 }
 

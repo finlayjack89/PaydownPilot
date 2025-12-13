@@ -38,6 +38,28 @@ export enum MembershipFeeFrequency {
   ANNUAL = "annual"
 }
 
+// Current Finances - Per-account analysis summary (stored as JSONB)
+export interface AccountAnalysisSummary {
+  averageMonthlyIncomeCents: number;
+  employmentIncomeCents: number;
+  otherIncomeCents: number;
+  sideHustleIncomeCents: number;
+  fixedCostsCents: number; // Utilities, rent, direct debits
+  essentialsCents: number; // Groceries, transport
+  discretionaryCents: number; // Entertainment, subscriptions
+  debtPaymentsCents: number;
+  availableForDebtCents: number;
+  breakdown: {
+    income: Array<{ description: string; amountCents: number; category: string }>;
+    fixedCosts: Array<{ description: string; amountCents: number; category: string }>;
+    essentials: Array<{ description: string; amountCents: number; category: string }>;
+    discretionary: Array<{ description: string; amountCents: number; category: string }>;
+    debtPayments: Array<{ description: string; amountCents: number; category: string }>;
+  };
+  analysisMonths: number;
+  lastUpdated: string;
+}
+
 // Database Tables
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -152,22 +174,38 @@ export const lenderProducts = pgTable("lender_products", {
   lenderProductCountryUnique: unique().on(table.lenderName, table.productName, table.country),
 }));
 
-// TrueLayer Integration Tables
+// TrueLayer Integration Tables - Supports multiple bank accounts per user
 export const trueLayerItems = pgTable("truelayer_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  trueLayerAccountId: text("truelayer_account_id").notNull(), // TrueLayer's account_id
+  institutionName: text("institution_name").notNull(), // Bank name (e.g., "Barclays", "HSBC")
+  institutionLogoUrl: text("institution_logo_url"), // Bank logo URL from TrueLayer
+  accountName: text("account_name").notNull(), // Account display name (e.g., "Current Account")
+  accountType: text("account_type"), // current, savings, etc.
+  currency: text("currency").default("GBP"),
   accessTokenEncrypted: text("access_token_encrypted").notNull(),
   refreshTokenEncrypted: text("refresh_token_encrypted"),
   consentExpiresAt: timestamp("consent_expires_at"),
-  provider: text("provider"),
-  lastSyncedAt: timestamp("last_synced_at"),
+  provider: text("provider"), // TrueLayer provider ID
+  lastSyncedAt: timestamp("last_synced_at"), // Last transaction fetch
+  lastEnrichedAt: timestamp("last_enriched_at"), // Last Ntropy enrichment
+  lastAnalyzedAt: timestamp("last_analyzed_at"), // Last full budget analysis
+  nextRecalibrationDate: date("next_recalibration_date"), // Monthly recalibration schedule
+  isSideHustle: boolean("is_side_hustle").default(false), // Flag for income categorization
+  // Per-account analysis summary (cached results)
+  analysisSummary: jsonb("analysis_summary").$type<AccountAnalysisSummary>(),
+  connectionStatus: text("connection_status").default("active"), // 'active', 'expired', 'error'
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  userAccountUnique: unique().on(table.userId, table.trueLayerAccountId),
+}));
 
-// Enriched Transactions Cache (Ntropy enrichment results)
+// Enriched Transactions Cache (Ntropy enrichment results) - Links to specific TrueLayer account
 export const enrichedTransactions = pgTable("enriched_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  trueLayerItemId: varchar("truelayer_item_id").references(() => trueLayerItems.id, { onDelete: "cascade" }), // Links to specific bank account
   trueLayerTransactionId: text("truelayer_transaction_id").notNull(),
   ntropyTransactionId: text("ntropy_transaction_id"),
   originalDescription: text("original_description").notNull(),
@@ -181,6 +219,7 @@ export const enrichedTransactions = pgTable("enriched_transactions", {
   amountCents: integer("amount_cents").notNull(),
   entryType: text("entry_type").notNull(), // 'incoming' or 'outgoing'
   budgetCategory: text("budget_category"), // 'debt', 'fixed', 'discretionary'
+  ukCategory: text("uk_category"), // UK-specific category mapping (employment, utilities, subscriptions, etc.)
   transactionDate: date("transaction_date").notNull(),
   currency: text("currency").default("GBP"),
   createdAt: timestamp("created_at").defaultNow(),
