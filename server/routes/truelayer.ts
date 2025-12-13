@@ -66,28 +66,29 @@ export function registerTrueLayerRoutes(app: Express) {
 
   // OAuth callback - now creates/updates per-account TrueLayerItems
   app.get("/api/truelayer/callback", async (req, res) => {
+    const { code, state, error: authError } = req.query;
+    
+    // Extract returnUrl from state early so it's available in catch block
+    let returnUrl: string = "/budget";
+    let userId: string | null = null;
+    if (state && typeof state === "string") {
+      try {
+        const decoded = JSON.parse(Buffer.from(state, "base64").toString());
+        userId = decoded.userId;
+        returnUrl = decoded.returnUrl || "/budget";
+      } catch (e) {
+        console.error("[TrueLayer] Failed to decode state:", e);
+      }
+    }
+    
     try {
-      const { code, state, error } = req.query;
-
-      if (error) {
-        console.error("[TrueLayer] Auth callback error:", error);
-        return res.redirect(`/budget?error=${encodeURIComponent(String(error))}`);
+      if (authError) {
+        console.error("[TrueLayer] Auth callback error:", authError);
+        return res.redirect(`${returnUrl}?error=${encodeURIComponent(String(authError))}`);
       }
 
       if (!code || typeof code !== "string") {
-        return res.redirect("/budget?error=missing_code");
-      }
-
-      let userId: string | null = null;
-      let returnUrl: string = "/budget";
-      if (state && typeof state === "string") {
-        try {
-          const decoded = JSON.parse(Buffer.from(state, "base64").toString());
-          userId = decoded.userId;
-          returnUrl = decoded.returnUrl || "/budget";
-        } catch (e) {
-          console.error("[TrueLayer] Failed to decode state:", e);
-        }
+        return res.redirect(`${returnUrl}?error=missing_code`);
       }
 
       if (!userId) {

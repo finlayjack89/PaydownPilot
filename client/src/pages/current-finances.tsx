@@ -131,19 +131,20 @@ export default function CurrentFinances() {
 
     setIsConnecting(true);
     try {
-      const response = await fetch("/api/truelayer/auth-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch(`/api/truelayer/auth-url?returnUrl=${encodeURIComponent("/current-finances")}`, {
         credentials: "include",
-        body: JSON.stringify({ returnUrl: "/current-finances" })
       });
-      if (!response.ok) throw new Error("Failed to get auth URL");
       const data = await response.json();
-      window.location.href = data.authUrl;
-    } catch (error) {
+      
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        throw new Error(data.message || "Failed to get authentication URL");
+      }
+    } catch (error: any) {
       console.error("Connect bank error:", error);
       setIsConnecting(false);
-      toast({ title: "Connection failed", description: "Could not start bank connection.", variant: "destructive" });
+      toast({ title: "Connection failed", description: error.message || "Could not start bank connection.", variant: "destructive" });
     }
   };
 
