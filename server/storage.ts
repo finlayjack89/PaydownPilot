@@ -62,6 +62,7 @@ export interface IStorage {
   // TrueLayer Item methods (multi-account support)
   getTrueLayerItemByUserId(userId: string): Promise<TrueLayerItem | undefined>; // Legacy: returns first item
   getTrueLayerItemsByUserId(userId: string): Promise<TrueLayerItem[]>; // NEW: returns all accounts
+  getAllTrueLayerItems(): Promise<TrueLayerItem[]>; // Background sync: get all items across all users
   getTrueLayerItemById(id: string): Promise<TrueLayerItem | undefined>; // NEW: get specific account
   getTrueLayerItemByAccountId(userId: string, trueLayerAccountId: string): Promise<TrueLayerItem | undefined>; // NEW: find by TL account ID
   createTrueLayerItem(item: InsertTrueLayerItem): Promise<TrueLayerItem>;
@@ -281,6 +282,10 @@ export class DatabaseStorage implements IStorage {
   
   async getTrueLayerItemsByUserId(userId: string): Promise<TrueLayerItem[]> {
     return await db.select().from(trueLayerItems).where(eq(trueLayerItems.userId, userId));
+  }
+  
+  async getAllTrueLayerItems(): Promise<TrueLayerItem[]> {
+    return await db.select().from(trueLayerItems);
   }
   
   async getTrueLayerItemById(id: string): Promise<TrueLayerItem | undefined> {
@@ -707,6 +712,10 @@ class GuestStorageWrapper implements IStorage {
   async getTrueLayerItemsByUserId(userId: string): Promise<TrueLayerItem[]> {
     if (this.isGuest(userId)) return [];
     return this.dbStorage.getTrueLayerItemsByUserId(userId);
+  }
+  
+  async getAllTrueLayerItems(): Promise<TrueLayerItem[]> {
+    return this.dbStorage.getAllTrueLayerItems();
   }
   
   async getTrueLayerItemById(id: string): Promise<TrueLayerItem | undefined> {

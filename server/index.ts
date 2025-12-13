@@ -6,6 +6,7 @@ import { db } from "./db";
 import { lenderProducts } from "@shared/schema";
 import { count } from "drizzle-orm";
 import { seedLenderProductsData } from "./scripts/seed-lender-products-data";
+import { startBackgroundSync, stopBackgroundSync } from "./services/background-sync";
 
 const app = express();
 
@@ -104,6 +105,7 @@ startPythonBackend();
 // Cleanup Python process on exit
 process.on("exit", () => {
   shouldRestartPython = false; // Prevent restart during shutdown
+  stopBackgroundSync(); // Stop background sync scheduler
   if (pythonProcess) {
     pythonProcess.kill();
   }
@@ -111,6 +113,7 @@ process.on("exit", () => {
 
 process.on("SIGINT", () => {
   shouldRestartPython = false; // Prevent restart during shutdown
+  stopBackgroundSync(); // Stop background sync scheduler
   if (pythonProcess) {
     pythonProcess.kill();
   }
@@ -220,5 +223,9 @@ async function ensureLenderProductsSeeded() {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    
+    // Start background sync scheduler for TrueLayer accounts
+    startBackgroundSync();
+    log("Background sync scheduler started (30-minute intervals)");
   });
 })();
