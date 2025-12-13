@@ -1,4 +1,4 @@
-import { Home, CreditCard, BarChart3, LogOut, Calendar } from "lucide-react";
+import { Home, CreditCard, BarChart3, LogOut, Calendar, Wallet } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { logoImage } from "@/components/logo";
@@ -18,6 +18,7 @@ import {
 const navItems = [
   { href: "/", icon: Home, label: "Dashboard", testId: "link-dashboard" },
   { href: "/accounts", icon: CreditCard, label: "Accounts", testId: "link-accounts" },
+  { href: "/current-finances", icon: Wallet, label: "Current Finances", testId: "link-current-finances" },
   { href: "/plan", icon: BarChart3, label: "Plan Details", testId: "link-plan-details" },
   { href: "/calendar", icon: Calendar, label: "Payment Calendar", testId: "link-calendar" },
 ];

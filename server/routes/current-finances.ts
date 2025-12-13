@@ -1,0 +1,467 @@
+/**
+ * Current Finances API Routes
+ * 
+ * Provides endpoints for the Current Finances feature which displays
+ * connected bank accounts, their transaction summaries, and combined
+ * budget analysis for debt repayment calculations.
+ */
+
+import type { Express } from "express";
+import { storage } from "../storage";
+import { requireAuth } from "../auth";
+import type { TrueLayerItem, EnrichedTransaction, AccountAnalysisSummary } from "@shared/schema";
+import { 
+  mapNtropyLabelsToCategory, 
+  UKBudgetCategory,
+  type BudgetGroup,
+  BUDGET_GROUP_CONFIG,
+  getCategoriesForGroup,
+  isIncomeCategory,
+  isFixedCostCategory,
+  isEssentialCategory,
+  isDiscretionaryCategory,
+  isDebtPaymentCategory,
+} from "../services/category-mapping";
+
+// Response types for the Current Finances API
+export interface ConnectedAccountSummary {
+  id: string;
+  trueLayerAccountId: string;
+  institutionName: string;
+  institutionLogoUrl: string | null;
+  accountName: string;
+  accountType: string | null;
+  currency: string | null;
+  connectionStatus: string | null;
+  isSideHustle: boolean | null;
+  lastSyncedAt: string | null;
+  lastEnrichedAt: string | null;
+  lastAnalyzedAt: string | null;
+  transactionCount: number;
+  analysisSummary: AccountAnalysisSummary | null;
+}
+
+export interface AccountDetailResponse extends ConnectedAccountSummary {
+  transactions: EnrichedTransactionDetail[];
+  categoryBreakdown: CategoryBreakdown[];
+}
+
+export interface EnrichedTransactionDetail {
+  id: string;
+  trueLayerTransactionId: string;
+  originalDescription: string;
+  merchantCleanName: string | null;
+  merchantLogoUrl: string | null;
+  amountCents: number;
+  entryType: string;
+  ukCategory: string | null;
+  budgetCategory: string | null;
+  transactionDate: string | null;
+  isRecurring: boolean | null;
+  recurrenceFrequency: string | null;
+}
+
+export interface CategoryBreakdown {
+  category: string;
+  displayName: string;
+  budgetGroup: BudgetGroup;
+  icon: string;
+  color: string;
+  totalCents: number;
+  transactionCount: number;
+  percentage: number;
+}
+
+export interface CombinedFinancesResponse {
+  accounts: ConnectedAccountSummary[];
+  combined: {
+    totalIncomeCents: number;
+    employmentIncomeCents: number;
+    sideHustleIncomeCents: number;
+    otherIncomeCents: number;
+    fixedCostsCents: number;
+    essentialsCents: number;
+    discretionaryCents: number;
+    debtPaymentsCents: number;
+    availableForDebtCents: number;
+    analysisMonths: number;
+  };
+  budgetForDebt: {
+    currentBudgetCents: number | null;
+    potentialBudgetCents: number | null;
+    suggestedBudgetCents: number;
+  };
+}
+
+function buildAccountSummary(
+  item: TrueLayerItem,
+  transactionCount: number
+): ConnectedAccountSummary {
+  return {
+    id: item.id,
+    trueLayerAccountId: item.trueLayerAccountId,
+    institutionName: item.institutionName,
+    institutionLogoUrl: item.institutionLogoUrl,
+    accountName: item.accountName,
+    accountType: item.accountType,
+    currency: item.currency,
+    connectionStatus: item.connectionStatus,
+    isSideHustle: item.isSideHustle,
+    lastSyncedAt: item.lastSyncedAt?.toISOString() || null,
+    lastEnrichedAt: item.lastEnrichedAt?.toISOString() || null,
+    lastAnalyzedAt: item.lastAnalyzedAt?.toISOString() || null,
+    transactionCount,
+    analysisSummary: item.analysisSummary,
+  };
+}
+
+function buildCategoryBreakdown(transactions: EnrichedTransaction[]): CategoryBreakdown[] {
+  const categoryTotals = new Map<string, { totalCents: number; count: number }>();
+  let grandTotal = 0;
+
+  for (const tx of transactions) {
+    const category = tx.ukCategory || UKBudgetCategory.OTHER;
+    const current = categoryTotals.get(category) || { totalCents: 0, count: 0 };
+    current.totalCents += Math.abs(tx.amountCents);
+    current.count += 1;
+    categoryTotals.set(category, current);
+    grandTotal += Math.abs(tx.amountCents);
+  }
+
+  const breakdown: CategoryBreakdown[] = [];
+  
+  for (const [category, data] of Array.from(categoryTotals)) {
+    const ukCategory = category as UKBudgetCategory;
+    const mapping = mapNtropyLabelsToCategory([], undefined, undefined, false);
+    let budgetGroup: BudgetGroup = "other";
+    
+    if (isIncomeCategory(ukCategory)) budgetGroup = "income";
+    else if (isFixedCostCategory(ukCategory)) budgetGroup = "fixed_costs";
+    else if (isEssentialCategory(ukCategory)) budgetGroup = "essentials";
+    else if (isDiscretionaryCategory(ukCategory)) budgetGroup = "discretionary";
+    else if (isDebtPaymentCategory(ukCategory)) budgetGroup = "debt";
+    
+    const groupConfig = BUDGET_GROUP_CONFIG[budgetGroup];
+
+    breakdown.push({
+      category,
+      displayName: category.charAt(0).toUpperCase() + category.slice(1).replace(/_/g, " "),
+      budgetGroup,
+      icon: groupConfig.icon,
+      color: groupConfig.color,
+      totalCents: data.totalCents,
+      transactionCount: data.count,
+      percentage: grandTotal > 0 ? Math.round((data.totalCents / grandTotal) * 100) : 0,
+    });
+  }
+
+  return breakdown.sort((a, b) => b.totalCents - a.totalCents);
+}
+
+function aggregateAnalysisSummaries(
+  accounts: Array<{ item: TrueLayerItem; transactionCount: number }>
+): CombinedFinancesResponse["combined"] {
+  let totalIncome = 0;
+  let employment = 0;
+  let sideHustle = 0;
+  let otherIncome = 0;
+  let fixedCosts = 0;
+  let essentials = 0;
+  let discretionary = 0;
+  let debtPayments = 0;
+  let analysisMonths = 1;
+
+  for (const { item } of accounts) {
+    const summary = item.analysisSummary;
+    if (!summary) continue;
+
+    // Handle side hustle income separately
+    if (item.isSideHustle) {
+      sideHustle += summary.employmentIncomeCents + summary.otherIncomeCents;
+    } else {
+      employment += summary.employmentIncomeCents;
+      otherIncome += summary.otherIncomeCents + summary.sideHustleIncomeCents;
+    }
+    
+    totalIncome += summary.averageMonthlyIncomeCents;
+    fixedCosts += summary.fixedCostsCents;
+    essentials += summary.essentialsCents;
+    discretionary += summary.discretionaryCents;
+    debtPayments += summary.debtPaymentsCents;
+    analysisMonths = Math.max(analysisMonths, summary.analysisMonths);
+  }
+
+  const availableForDebt = Math.max(0, totalIncome - fixedCosts - essentials - debtPayments);
+
+  return {
+    totalIncomeCents: totalIncome,
+    employmentIncomeCents: employment,
+    sideHustleIncomeCents: sideHustle,
+    otherIncomeCents: otherIncome,
+    fixedCostsCents: fixedCosts,
+    essentialsCents: essentials,
+    discretionaryCents: discretionary,
+    debtPaymentsCents: debtPayments,
+    availableForDebtCents: availableForDebt,
+    analysisMonths,
+  };
+}
+
+export function registerCurrentFinancesRoutes(app: Express): void {
+  /**
+   * GET /api/current-finances/accounts
+   * Returns all connected bank accounts with their analysis summaries
+   */
+  app.get("/api/current-finances/accounts", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const items = await storage.getTrueLayerItemsByUserId(userId);
+      
+      const accountsWithCounts = await Promise.all(
+        items.map(async (item) => {
+          const transactionCount = await storage.getEnrichedTransactionsCountByItemId(item.id);
+          return buildAccountSummary(item, transactionCount);
+        })
+      );
+
+      res.json({ accounts: accountsWithCounts });
+    } catch (error: any) {
+      console.error("[Current Finances] Error fetching accounts:", error);
+      res.status(500).json({ message: "Failed to fetch connected accounts" });
+    }
+  });
+
+  /**
+   * GET /api/current-finances/account/:id
+   * Returns detailed view of a specific connected account with transactions
+   */
+  app.get("/api/current-finances/account/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const accountId = req.params.id;
+      
+      const item = await storage.getTrueLayerItemById(accountId);
+      
+      if (!item) {
+        return res.status(404).json({ message: "Account not found" });
+      }
+      
+      if (item.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const transactions = await storage.getEnrichedTransactionsByItemId(accountId);
+      const transactionCount = transactions.length;
+      
+      const transactionDetails: EnrichedTransactionDetail[] = transactions.map((tx) => ({
+        id: tx.id,
+        trueLayerTransactionId: tx.trueLayerTransactionId,
+        originalDescription: tx.originalDescription,
+        merchantCleanName: tx.merchantCleanName,
+        merchantLogoUrl: tx.merchantLogoUrl,
+        amountCents: tx.amountCents,
+        entryType: tx.entryType,
+        ukCategory: tx.ukCategory,
+        budgetCategory: tx.budgetCategory,
+        transactionDate: tx.transactionDate,
+        isRecurring: tx.isRecurring,
+        recurrenceFrequency: tx.recurrenceFrequency,
+      }));
+
+      const categoryBreakdown = buildCategoryBreakdown(transactions);
+
+      const response: AccountDetailResponse = {
+        ...buildAccountSummary(item, transactionCount),
+        transactions: transactionDetails,
+        categoryBreakdown,
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      console.error("[Current Finances] Error fetching account detail:", error);
+      res.status(500).json({ message: "Failed to fetch account details" });
+    }
+  });
+
+  /**
+   * GET /api/current-finances/combined
+   * Returns aggregated view across all accounts with debt budget calculation
+   */
+  app.get("/api/current-finances/combined", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const items = await storage.getTrueLayerItemsByUserId(userId);
+      const user = await storage.getUser(userId);
+      
+      const accountsWithCounts = await Promise.all(
+        items.map(async (item) => {
+          const transactionCount = await storage.getEnrichedTransactionsCountByItemId(item.id);
+          return { item, transactionCount };
+        })
+      );
+
+      const accounts = accountsWithCounts.map(({ item, transactionCount }) => 
+        buildAccountSummary(item, transactionCount)
+      );
+      
+      const combined = aggregateAnalysisSummaries(accountsWithCounts);
+      
+      // Calculate suggested budget for debt repayment
+      // Use 50% of discretionary spending as a conservative suggestion
+      const suggestedBudgetCents = Math.round(combined.discretionaryCents * 0.5);
+
+      const response: CombinedFinancesResponse = {
+        accounts,
+        combined,
+        budgetForDebt: {
+          currentBudgetCents: user?.currentBudgetCents || null,
+          potentialBudgetCents: user?.potentialBudgetCents || null,
+          suggestedBudgetCents,
+        },
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      console.error("[Current Finances] Error fetching combined view:", error);
+      res.status(500).json({ message: "Failed to fetch combined finances" });
+    }
+  });
+
+  /**
+   * POST /api/current-finances/account/:id/analyze
+   * Triggers re-analysis of transactions for a specific account
+   */
+  app.post("/api/current-finances/account/:id/analyze", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const accountId = req.params.id;
+      
+      const item = await storage.getTrueLayerItemById(accountId);
+      
+      if (!item) {
+        return res.status(404).json({ message: "Account not found" });
+      }
+      
+      if (item.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Fetch enriched transactions for this account
+      const transactions = await storage.getEnrichedTransactionsByItemId(accountId);
+      
+      // Build analysis summary from enriched transactions
+      let employmentIncome = 0;
+      let otherIncome = 0;
+      let fixedCosts = 0;
+      let essentials = 0;
+      let discretionary = 0;
+      let debtPayments = 0;
+
+      const breakdown: AccountAnalysisSummary["breakdown"] = {
+        income: [],
+        fixedCosts: [],
+        essentials: [],
+        discretionary: [],
+        debtPayments: [],
+      };
+
+      for (const tx of transactions) {
+        const ukCategory = (tx.ukCategory || UKBudgetCategory.OTHER) as UKBudgetCategory;
+        const amountCents = Math.abs(tx.amountCents);
+        const isIncoming = tx.entryType === "incoming";
+        
+        const item = {
+          description: tx.merchantCleanName || tx.originalDescription,
+          amountCents,
+          category: ukCategory,
+        };
+
+        if (isIncoming) {
+          if (ukCategory === UKBudgetCategory.EMPLOYMENT) {
+            employmentIncome += amountCents;
+            breakdown.income.push(item);
+          } else {
+            otherIncome += amountCents;
+            breakdown.income.push(item);
+          }
+        } else {
+          if (isFixedCostCategory(ukCategory)) {
+            fixedCosts += amountCents;
+            breakdown.fixedCosts.push(item);
+          } else if (isEssentialCategory(ukCategory)) {
+            essentials += amountCents;
+            breakdown.essentials.push(item);
+          } else if (isDebtPaymentCategory(ukCategory)) {
+            debtPayments += amountCents;
+            breakdown.debtPayments.push(item);
+          } else {
+            discretionary += amountCents;
+            breakdown.discretionary.push(item);
+          }
+        }
+      }
+
+      const totalIncome = employmentIncome + otherIncome;
+      const availableForDebt = Math.max(0, totalIncome - fixedCosts - essentials - debtPayments);
+
+      const analysisSummary: AccountAnalysisSummary = {
+        averageMonthlyIncomeCents: totalIncome,
+        employmentIncomeCents: employmentIncome,
+        otherIncomeCents: otherIncome,
+        sideHustleIncomeCents: 0, // Will be calculated at combined level based on isSideHustle flag
+        fixedCostsCents: fixedCosts,
+        essentialsCents: essentials,
+        discretionaryCents: discretionary,
+        debtPaymentsCents: debtPayments,
+        availableForDebtCents: availableForDebt,
+        breakdown,
+        analysisMonths: 1, // TODO: Calculate based on transaction date range
+        lastUpdated: new Date().toISOString(),
+      };
+
+      // Update the TrueLayer item with the analysis summary
+      await storage.updateTrueLayerItem(accountId, {
+        analysisSummary,
+        lastAnalyzedAt: new Date(),
+      });
+
+      res.json({ success: true, analysisSummary });
+    } catch (error: any) {
+      console.error("[Current Finances] Error analyzing account:", error);
+      res.status(500).json({ message: "Failed to analyze account" });
+    }
+  });
+
+  /**
+   * GET /api/current-finances/refresh-status
+   * Returns refresh/sync status for all connected accounts
+   */
+  app.get("/api/current-finances/refresh-status", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const items = await storage.getTrueLayerItemsByUserId(userId);
+      
+      const now = new Date();
+      const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+      
+      const status = items.map((item) => {
+        const lastSync = item.lastSyncedAt ? new Date(item.lastSyncedAt) : null;
+        const needsRefresh = !lastSync || lastSync < thirtyMinutesAgo;
+        
+        return {
+          id: item.id,
+          accountName: item.accountName,
+          institutionName: item.institutionName,
+          lastSyncedAt: item.lastSyncedAt?.toISOString() || null,
+          needsRefresh,
+          connectionStatus: item.connectionStatus,
+        };
+      });
+
+      res.json({ accounts: status });
+    } catch (error: any) {
+      console.error("[Current Finances] Error fetching refresh status:", error);
+      res.status(500).json({ message: "Failed to fetch refresh status" });
+    }
+  });
+}
