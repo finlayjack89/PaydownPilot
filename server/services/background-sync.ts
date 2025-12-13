@@ -15,11 +15,34 @@ import {
   refreshAccessToken 
 } from "../truelayer";
 import { encryptToken, decryptToken } from "../encryption";
-import type { TrueLayerItem, InsertEnrichedTransaction } from "@shared/schema";
+import type { TrueLayerItem, InsertEnrichedTransaction, AccountAnalysisSummary, EnrichedTransaction } from "@shared/schema";
 import { mapNtropyLabelsToCategory } from "./category-mapping";
 
 const SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Add one month to a date, clamping to the last day of the target month
+ * if the current day exceeds the number of days in the target month.
+ * Example: Jan 31 → Feb 28 (or Feb 29 in leap year)
+ */
+function addOneMonth(date: Date): Date {
+  const result = new Date(date);
+  const currentDay = result.getDate();
+  const currentMonth = result.getMonth();
+  
+  // Move to the first day of the target month to avoid overflow
+  result.setDate(1);
+  result.setMonth(currentMonth + 1);
+  
+  // Get the last day of the target month
+  const lastDayOfTargetMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  
+  // Clamp the day to the last day of the target month if needed
+  result.setDate(Math.min(currentDay, lastDayOfTargetMonth));
+  
+  return result;
+}
 
 // Concurrency guard: tracks accounts currently being synced
 const syncingAccounts = new Set<string>();
@@ -35,6 +58,173 @@ function needsRefresh(item: TrueLayerItem): boolean {
   const lastSync = new Date(item.lastSyncedAt).getTime();
   const now = Date.now();
   return (now - lastSync) > STALE_THRESHOLD_MS;
+}
+
+/**
+ * Check if an account needs budget recalibration
+ * Returns true if nextRecalibrationDate is null or in the past
+ */
+function needsRecalibration(item: TrueLayerItem): boolean {
+  if (!item.nextRecalibrationDate) return true;
+  const recalibrationDate = new Date(item.nextRecalibrationDate);
+  return recalibrationDate <= new Date();
+}
+
+/**
+ * Recalibrate account budget analysis
+ * Analyzes enriched transactions to compute AccountAnalysisSummary
+ */
+async function recalibrateAccountBudget(item: TrueLayerItem): Promise<void> {
+  const accountId = item.id;
+  console.log(`[Background Sync] Starting budget recalibration for account ${accountId}`);
+
+  try {
+    const transactions = await storage.getEnrichedTransactionsByItemId(accountId);
+    
+    // Calculate next recalibration date (1 month from now) using helper to avoid overflow
+    const nextRecalibrationDate = addOneMonth(new Date());
+    
+    if (transactions.length === 0) {
+      console.log(`[Background Sync] No transactions to analyze for account ${accountId}, updating next recalibration date`);
+      // Still update nextRecalibrationDate to prevent constant retries
+      await storage.updateTrueLayerItem(accountId, {
+        nextRecalibrationDate: nextRecalibrationDate.toISOString().split('T')[0],
+      });
+      return;
+    }
+
+    const summary = computeAccountAnalysisSummary(transactions, item.isSideHustle || false);
+
+    await storage.updateTrueLayerItem(accountId, {
+      analysisSummary: summary,
+      lastAnalyzedAt: new Date(),
+      nextRecalibrationDate: nextRecalibrationDate.toISOString().split('T')[0],
+    });
+
+    console.log(`[Background Sync] Budget recalibration completed for account ${accountId}`);
+  } catch (error) {
+    console.error(`[Background Sync] Budget recalibration failed for account ${accountId}:`, error);
+  }
+}
+
+/**
+ * Compute AccountAnalysisSummary from enriched transactions
+ */
+function computeAccountAnalysisSummary(
+  transactions: EnrichedTransaction[],
+  isSideHustle: boolean
+): AccountAnalysisSummary {
+  const incomeItems: Array<{ description: string; amountCents: number; category: string }> = [];
+  const fixedCostsItems: Array<{ description: string; amountCents: number; category: string }> = [];
+  const essentialsItems: Array<{ description: string; amountCents: number; category: string }> = [];
+  const discretionaryItems: Array<{ description: string; amountCents: number; category: string }> = [];
+  const debtPaymentsItems: Array<{ description: string; amountCents: number; category: string }> = [];
+
+  let totalIncomeCents = 0;
+  let employmentIncomeCents = 0;
+  let otherIncomeCents = 0;
+  let sideHustleIncomeCents = 0;
+  let fixedCostsCents = 0;
+  let essentialsCents = 0;
+  let discretionaryCents = 0;
+  let debtPaymentsCents = 0;
+
+  for (const tx of transactions) {
+    const item = {
+      description: tx.merchantCleanName || tx.originalDescription,
+      amountCents: tx.amountCents,
+      category: tx.ukCategory || tx.budgetCategory || 'other',
+    };
+
+    if (tx.entryType === 'incoming') {
+      incomeItems.push(item);
+      totalIncomeCents += tx.amountCents;
+
+      if (isSideHustle) {
+        sideHustleIncomeCents += tx.amountCents;
+      } else if (tx.ukCategory === 'employment' || tx.budgetCategory === 'income') {
+        employmentIncomeCents += tx.amountCents;
+      } else {
+        otherIncomeCents += tx.amountCents;
+      }
+    } else {
+      switch (tx.budgetCategory) {
+        case 'fixed_costs':
+          fixedCostsItems.push(item);
+          fixedCostsCents += tx.amountCents;
+          break;
+        case 'essentials':
+          essentialsItems.push(item);
+          essentialsCents += tx.amountCents;
+          break;
+        case 'debt':
+          debtPaymentsItems.push(item);
+          debtPaymentsCents += tx.amountCents;
+          break;
+        case 'discretionary':
+        default:
+          discretionaryItems.push(item);
+          discretionaryCents += tx.amountCents;
+          break;
+      }
+    }
+  }
+
+  const dateRange = getTransactionDateRange(transactions);
+  const analysisMonths = Math.max(1, dateRange);
+
+  const averageMonthlyIncomeCents = Math.round(totalIncomeCents / analysisMonths);
+  const avgFixedCents = Math.round(fixedCostsCents / analysisMonths);
+  const avgEssentialsCents = Math.round(essentialsCents / analysisMonths);
+  const avgDiscretionaryCents = Math.round(discretionaryCents / analysisMonths);
+  const avgDebtCents = Math.round(debtPaymentsCents / analysisMonths);
+
+  // Safe-to-spend = Income - Fixed Costs - Variable Essentials (matches budget-engine.ts)
+  const safeToSpendCents = Math.max(0, averageMonthlyIncomeCents - avgFixedCents - avgEssentialsCents);
+  // Available for debt is what's left after discretionary spending
+  const availableForDebtCents = Math.max(0, safeToSpendCents - avgDiscretionaryCents);
+
+  return {
+    averageMonthlyIncomeCents,
+    employmentIncomeCents: Math.round(employmentIncomeCents / analysisMonths),
+    otherIncomeCents: Math.round(otherIncomeCents / analysisMonths),
+    sideHustleIncomeCents: Math.round(sideHustleIncomeCents / analysisMonths),
+    fixedCostsCents: avgFixedCents,
+    essentialsCents: avgEssentialsCents,
+    discretionaryCents: avgDiscretionaryCents,
+    debtPaymentsCents: avgDebtCents,
+    availableForDebtCents,
+    breakdown: {
+      income: incomeItems,
+      fixedCosts: fixedCostsItems,
+      essentials: essentialsItems,
+      discretionary: discretionaryItems,
+      debtPayments: debtPaymentsItems,
+    },
+    analysisMonths,
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+/**
+ * Calculate the date range in months from the transactions
+ */
+function getTransactionDateRange(transactions: EnrichedTransaction[]): number {
+  if (transactions.length === 0) return 1;
+  
+  const dates = transactions
+    .map(tx => tx.transactionDate ? new Date(tx.transactionDate) : null)
+    .filter((d): d is Date => d !== null);
+  
+  if (dates.length === 0) return 1;
+  
+  const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+  const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+  
+  const diffMonths = (maxDate.getFullYear() - minDate.getFullYear()) * 12 
+    + (maxDate.getMonth() - minDate.getMonth()) + 1;
+  
+  return Math.max(1, diffMonths);
 }
 
 /**
@@ -243,6 +433,12 @@ async function syncAccount(item: TrueLayerItem): Promise<void> {
     // Update lastSyncedAt
     await storage.updateTrueLayerItem(accountId, { lastSyncedAt: new Date() });
     console.log(`[Background Sync] Sync completed for account ${accountId}`);
+
+    // Check if budget recalibration is needed
+    const updatedItem = await storage.getTrueLayerItemById(accountId);
+    if (updatedItem && needsRecalibration(updatedItem)) {
+      await recalibrateAccountBudget(updatedItem);
+    }
 
   } catch (error) {
     console.error(`[Background Sync] Sync failed for account ${accountId}:`, error);
