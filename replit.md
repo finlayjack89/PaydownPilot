@@ -61,7 +61,7 @@ Preferred communication style: Simple, everyday language.
 - **Data Fetching**: Fetches transactions (90 days) and direct debits via TrueLayer Data API for deterministic budget categorization.
 - **Budget Engine**: `server/services/budget-engine.ts` categorizes transactions into income, fixed costs, variable essentials, and discretionary spending using TrueLayer's `transaction_classification` field.
 - **Environment Variables**: `TRUELAYER_CLIENT_ID`, `TRUELAYER_CLIENT_SECRET` stored as secrets. `TRUELAYER_REDIRECT_URI` auto-configured from Replit domain.
-- **Sandbox Mode**: Uses TrueLayer sandbox environment with Mock Bank for testing. Production uses real UK banks.
+- **Live Mode**: Now using TrueLayer production environment (`USE_TRUELAYER_SANDBOX=false`). Users can connect real UK bank accounts (Barclays, HSBC, Lloyds, NatWest, etc.).
 
 ### Debt Buckets (UK Credit Card Feature)
 - **Purpose**: UK credit cards often have multiple balance segments at different APRs (0% balance transfers, 24.9% purchases, 39.9% cash advances). The bucket system allows users to track these separately for accurate interest calculations and payment prioritization.
