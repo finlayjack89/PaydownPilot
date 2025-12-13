@@ -40,6 +40,20 @@ Preferred communication style: Simple, everyday language.
   - EnrichmentProgressModal with animated Resolve logo, progress bar, transaction count, and ETA
   - Fallback to deterministic categorization if Ntropy is unavailable
   - Job orchestration in Express with in-memory registry for SSE broadcasting
+- **Current Finances Page**: Multi-account bank connection management at `/current-finances` with:
+  - Tile-based grid layout showing connected bank accounts with institution logos
+  - Per-account detail view with categorized income/outgoings breakdown (employment, benefits, fixed costs, essentials, discretionary, debt payments)
+  - Combined view aggregating all accounts with total debt repayment budget calculation
+  - Side hustle flag per account to categorize income correctly
+  - Real-time sync status and transaction counts per account
+  - UK-specific category mapping (council tax, utilities, subscriptions, etc.)
+- **Background Sync Scheduler**: Automatic 30-minute refresh of TrueLayer accounts with:
+  - Per-account concurrency guards to prevent duplicate syncs
+  - Token refresh handling for expired connections
+  - Incremental enrichment: only processes new transactions not already cached
+  - Monthly budget recalibration with next recalibration date tracking
+  - Month-safe date arithmetic for end-of-month edge cases
+  - Fallback to deterministic categorization if Ntropy is unavailable
 
 ### Backend
 - **Technology Stack**: Express.js with TypeScript, Drizzle ORM, Passport.js (local strategy), session-based authentication. Python backend (FastAPI) for the optimization engine.
