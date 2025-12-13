@@ -100,6 +100,15 @@ export function registerTrueLayerRoutes(app: Express) {
 
       const existingItem = await storage.getTrueLayerItemByUserId(userId as string);
       
+      // Clear old cached enriched transactions when reconnecting bank
+      // This ensures fresh analysis with progress modal for new/reconnected banks
+      try {
+        await storage.deleteEnrichedTransactionsByUserId(userId as string);
+        console.log(`[TrueLayer] Cleared cached enriched transactions for user ${userId}`);
+      } catch (e) {
+        console.log(`[TrueLayer] No cached transactions to clear for user ${userId}`);
+      }
+      
       if (existingItem) {
         await storage.updateTrueLayerItem(existingItem.id, {
           accessTokenEncrypted: encryptToken(tokenResponse.access_token),
