@@ -7,6 +7,7 @@
  */
 
 import type { Express } from "express";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../auth";
 import type { TrueLayerItem, EnrichedTransaction, AccountAnalysisSummary } from "@shared/schema";
@@ -462,6 +463,46 @@ export function registerCurrentFinancesRoutes(app: Express): void {
     } catch (error: any) {
       console.error("[Current Finances] Error fetching refresh status:", error);
       res.status(500).json({ message: "Failed to fetch refresh status" });
+    }
+  });
+
+  /**
+   * PATCH /api/truelayer/item/:id
+   * Updates a TrueLayer item (e.g., side hustle flag)
+   */
+  app.patch("/api/truelayer/item/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const itemId = req.params.id;
+      
+      // Validate request body
+      const updateSchema = z.object({
+        isSideHustle: z.boolean(),
+      });
+      
+      const parseResult = updateSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "isSideHustle must be a boolean" });
+      }
+      
+      const { isSideHustle } = parseResult.data;
+      
+      const item = await storage.getTrueLayerItemById(itemId);
+      
+      if (!item) {
+        return res.status(404).json({ message: "Account not found" });
+      }
+      
+      if (item.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.updateTrueLayerItem(itemId, { isSideHustle });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[Current Finances] Error updating item:", error);
+      res.status(500).json({ message: "Failed to update account" });
     }
   });
 }

@@ -1,7 +1,8 @@
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, AlertCircle, Clock, Briefcase } from "lucide-react";
+import { RefreshCw, CheckCircle2, AlertCircle, Clock, Briefcase, ChevronRight } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { formatDistanceToNow } from "date-fns";
 
@@ -53,9 +54,10 @@ export function ConnectedAccountTile({ account, currency, isRefreshing, onRefres
 
   return (
     <Card 
-      className="hover-elevate transition-all"
+      className="hover-elevate transition-all cursor-pointer group"
       data-testid={`card-account-${account.id}`}
     >
+      <Link href={`/current-finances/${account.id}`} className="block" data-testid={`link-account-detail-${account.id}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="flex items-center gap-3 min-w-0">
           {account.institutionLogoUrl ? (
@@ -93,6 +95,7 @@ export function ConnectedAccountTile({ account, currency, isRefreshing, onRefres
           ) : (
             <AlertCircle className="h-5 w-5 text-amber-500" data-testid={`icon-disconnected-${account.id}`} />
           )}
+          <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
       </CardHeader>
       
@@ -116,8 +119,8 @@ export function ConnectedAccountTile({ account, currency, isRefreshing, onRefres
             
             <div className="pt-2 border-t">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{account.transactionCount} transactions</span>
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <span className="text-muted-foreground" data-testid={`text-transaction-count-${account.id}`}>{account.transactionCount} transactions</span>
+                <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid={`text-last-synced-${account.id}`}>
                   <Clock className="h-3 w-3" />
                   {lastSynced}
                 </span>
@@ -126,35 +129,42 @@ export function ConnectedAccountTile({ account, currency, isRefreshing, onRefres
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-muted-foreground" data-testid={`text-status-${account.id}`}>
               {account.transactionCount > 0 
                 ? `${account.transactionCount} transactions ready for analysis`
                 : "No transactions synced yet"
               }
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid={`text-last-synced-${account.id}`}>
                 <Clock className="h-3 w-3" />
                 {lastSynced}
               </span>
             </div>
           </div>
         )}
+      </CardContent>
+      </Link>
         
         {onRefresh && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            className="w-full mt-3"
-            data-testid={`button-refresh-${account.id}`}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-            {isRefreshing ? "Analyzing..." : "Re-analyze"}
-          </Button>
+          <div className="px-6 pb-6">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRefresh();
+              }}
+              disabled={isRefreshing}
+              className="w-full"
+              data-testid={`button-refresh-${account.id}`}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              {isRefreshing ? "Analyzing..." : "Re-analyze"}
+            </Button>
+          </div>
         )}
-      </CardContent>
     </Card>
   );
 }

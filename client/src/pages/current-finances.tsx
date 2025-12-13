@@ -259,7 +259,7 @@ export default function CurrentFinances() {
           <>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Connected Accounts</h2>
-              <span className="text-sm text-muted-foreground">{accounts.length} account{accounts.length !== 1 ? "s" : ""}</span>
+              <span className="text-sm text-muted-foreground" data-testid="text-account-count">{accounts.length} account{accounts.length !== 1 ? "s" : ""}</span>
             </div>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {accounts.map((account) => (
